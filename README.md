@@ -108,25 +108,38 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 Hass-MCP provides several tools for interacting with Home Assistant:
 
 - `get_version`: Get the Home Assistant version
-- `get_entity`: Get the state of a specific entity
+- `get_entity`: Get the state of a specific entity with optional field filtering
 - `entity_action`: Perform actions on entities (turn on, off, toggle)
-- `list_entities`: Get a list of entities with optional filtering
+- `list_entities`: Get a list of entities with optional domain filtering and search
 - `search_entities_tool`: Search for entities matching a query
-- `domain_summary`: Get a summary of a domain's entities
+- `domain_summary_tool`: Get a summary of a domain's entities
 - `list_automations`: Get a list of all automations
-- `call_service`: Call any Home Assistant service
+- `call_service_tool`: Call any Home Assistant service
 - `restart_ha`: Restart Home Assistant
 - `get_history`: Get the state history of an entity
 - `get_error_log`: Get the Home Assistant error log
-- `get_docs`: Get documentation about available tools and resources
 
 ## Prompts for Guided Conversations
 
 Hass-MCP includes several prompts for guided conversations:
 
-- `create_automation`: Guide for creating Home Assistant automations
+- `create_automation`: Guide for creating Home Assistant automations based on trigger type
 - `debug_automation`: Troubleshooting help for automations that aren't working
 - `troubleshoot_entity`: Diagnose issues with entities
+- `routine_optimizer`: Analyze usage patterns and suggest optimized routines based on actual behavior
+- `automation_health_check`: Review all automations, find conflicts, redundancies, or improvement opportunities
+- `entity_naming_consistency`: Audit entity names and suggest standardization improvements
+- `dashboard_layout_generator`: Create optimized dashboards based on user preferences and usage patterns
+
+## Available Resources
+
+Hass-MCP provides the following resource endpoints:
+
+- `hass://entities/{entity_id}`: Get the state of a specific entity
+- `hass://entities/{entity_id}/detailed`: Get detailed information about an entity with all attributes
+- `hass://entities`: List all Home Assistant entities grouped by domain
+- `hass://entities/domain/{domain}`: Get a list of entities for a specific domain
+- `hass://search/{query}/{limit}`: Search for entities matching a query with custom result limit
 
 ## Development
 
