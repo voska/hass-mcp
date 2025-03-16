@@ -27,6 +27,7 @@ T = TypeVar('T')
 
 # Create an MCP server
 from mcp.server.fastmcp import FastMCP, Context, Image
+from mcp.server.stdio import stdio_server
 import mcp.types as types
 mcp = FastMCP("Hass-MCP", capabilities={
     "resources": {},
@@ -56,17 +57,8 @@ async def get_version() -> str:
     """
     Get the Home Assistant version
     
-    Returns the version number of the connected Home Assistant instance.
-    Useful for compatibility checks or informational displays.
-    
     Returns:
         A string with the Home Assistant version (e.g., "2025.3.0")
-    
-    Example:
-        ```python
-        version = await get_version()
-        # Returns: "2025.3.0"
-        ```
     """
     logger.info("Getting Home Assistant version")
     return await get_hass_version()
@@ -80,28 +72,15 @@ async def get_entity(entity_id: str, fields: Optional[List[str]] = None, detaile
     """
     Get the state of a Home Assistant entity with optional field filtering
     
-    This function provides token-efficient entity information. By default, it returns
-    a lean JSON structure with only essential fields. For detailed inspection, set
-    detailed=True or specify exactly which fields you need.
-    
     Args:
         entity_id: The entity ID to get (e.g. 'light.living_room')
-        fields: Optional list of fields to include in response 
-                (e.g. ['state', 'attributes', 'attr.brightness'])
+        fields: Optional list of fields to include (e.g. ['state', 'attr.brightness'])
         detailed: If True, returns all entity fields without filtering
                 
     Examples:
-        Basic state check: 
-          get_entity("light.living_room") - returns lean format with key fields
-          
-        Control operation: 
-          get_entity("light.living_room", fields=["state", "attr.brightness", "attr.supported_features"])
-          
-        Full details: 
-          get_entity("light.living_room", detailed=True) - returns everything
-          
-        Specific attribute: 
-          get_entity("sensor.temperature", fields=["attr.device_class", "attr.unit_of_measurement"])
+        entity_id="light.living_room" - basic state check
+        entity_id="light.living_room", fields=["state", "attr.brightness"] - specific fields
+        entity_id="light.living_room", detailed=True - all details
     """
     logger.info(f"Getting entity state: {entity_id}")
     if detailed:
@@ -119,11 +98,7 @@ async def get_entity(entity_id: str, fields: Optional[List[str]] = None, detaile
 @async_handler("entity_action")
 async def entity_action(entity_id: str, action: str, **params) -> dict:
     """
-    Perform an action on a Home Assistant entity
-    
-    This is the primary method for controlling Home Assistant entities. It supports
-    common operations (on, off, toggle) across all entity types, with domain-specific
-    parameters passed as keyword arguments.
+    Perform an action on a Home Assistant entity (on, off, toggle)
     
     Args:
         entity_id: The entity ID to control (e.g. 'light.living_room')
@@ -134,19 +109,9 @@ async def entity_action(entity_id: str, action: str, **params) -> dict:
         The response from Home Assistant
     
     Examples:
-        ```python
-        # Turn on a light with brightness
-        result = await entity_action("light.living_room", "on", brightness=255)
-        
-        # Turn off a switch
-        result = await entity_action("switch.garden_lights", "off")
-        
-        # Toggle a light with transition
-        result = await entity_action("light.bedroom", "toggle", transition=2)
-        
-        # Turn on a climate entity with target temperature
-        result = await entity_action("climate.living_room", "on", temperature=22.5)
-        ```
+        entity_id="light.living_room", action="on", brightness=255
+        entity_id="switch.garden_lights", action="off"
+        entity_id="climate.living_room", action="on", temperature=22.5
     
     Domain-Specific Parameters:
         - Lights: brightness (0-255), color_temp, rgb_color, transition, effect
@@ -285,18 +250,12 @@ async def list_entities(
     detailed: bool = False
 ) -> List[Dict[str, Any]]:
     """
-    Get a list of all Home Assistant entities with optional domain filtering and search
-    
-    This function provides a flexible way to retrieve entities. By default, it returns
-    token-efficient lean JSON structures. For token efficiency:
-    - Always use domain filtering when you know the entity type
-    - Use search_query for fuzzy matching instead of retrieving all entities
-    - Use a reasonable limit (20-50) for most queries
-    - Keep the default lean format unless you need specific fields
+    Get a list of Home Assistant entities with optional filtering
     
     Args:
         domain: Optional domain to filter by (e.g., 'light', 'switch', 'sensor')
         search_query: Optional search term to filter entities by name, id, or attributes
+                     (Note: Does not support wildcards. To get all entities, leave this empty)
         limit: Maximum number of entities to return (default: 100)
         fields: Optional list of specific fields to include in each entity
         detailed: If True, returns all entity fields without filtering
@@ -305,30 +264,17 @@ async def list_entities(
         A list of entity dictionaries with lean formatting by default
     
     Examples:
-        ```python
-        # Get all lights (lean format)
-        lights = await list_entities(domain="light")
-        
-        # Search for entities with specific fields
-        kitchen_devices = await list_entities(
-            search_query="kitchen", 
-            limit=20,
-            fields=["state", "attr.friendly_name"]
-        )
-        
-        # Get detailed entities (all fields)
-        detailed_sensors = await list_entities(
-            domain="sensor", 
-            search_query="temperature",
-            detailed=True
-        )
-        ```
+        domain="light" - get all lights
+        search_query="kitchen", limit=20 - search entities
+        domain="sensor", detailed=True - full sensor details
     
     Best Practices:
-        - Use lean format (default) for most operations to reduce token usage
-        - Prefer domain filtering over no filtering (1-2 orders of magnitude fewer tokens)
+        - Use lean format (default) for most operations
+        - Prefer domain filtering over no filtering
         - For domain overviews, use domain_summary_tool instead of list_entities
         - Only request detailed=True when necessary for full attribute inspection
+        - To get all entity types/domains, use list_entities without a domain filter, 
+          then extract domains from entity_ids
     """
     log_message = "Getting entities"
     if domain:
@@ -345,6 +291,11 @@ async def list_entities(
         log_message += " (lean format)"
     
     logger.info(log_message)
+    
+    # Handle special case where search_query is a wildcard/asterisk - just ignore it
+    if search_query == "*":
+        search_query = None
+        logger.info("Converting '*' search query to None (retrieving all entities)")
     
     # Use the updated get_entities function with field filtering
     return await get_entities(
@@ -429,12 +380,9 @@ async def search_entities_tool(query: str, limit: int = 20) -> Dict[str, Any]:
     """
     Search for entities matching a query string
     
-    This tool provides a flexible way to find entities by matching against
-    entity IDs, friendly names, states, and attribute values. It returns a structured,
-    token-efficient response with grouped results for easy processing.
-    
     Args:
-        query: The search query to match against entity IDs, names, and attributes
+        query: The search query to match against entity IDs, names, and attributes.
+              (Note: Does not support wildcards. To get all entities, leave this blank or use list_entities tool)
         limit: Maximum number of results to return (default: 20)
     
     Returns:
@@ -444,29 +392,71 @@ async def search_entities_tool(query: str, limit: int = 20) -> Dict[str, Any]:
         - domains: Map of domains with counts (e.g. {"light": 3, "sensor": 2})
         
     Examples:
-        ```python
-        # Search for temperature-related entities
-        results = await search_entities_tool("temperature")
+        query="temperature" - find temperature entities
+        query="living room", limit=10 - find living room entities
+        query="", limit=500 - list all entity types
         
-        # Search for entities in the living room with a limit of 10
-        results = await search_entities_tool("living room", limit=10)
-        
-        # Access results
-        for entity in results["results"]:
-            print(f"{entity['entity_id']}: {entity['state']}")
-        ```
-        
-    Best Practices:
-        - Use specific search terms to reduce result count
-        - For exact entity_id matches, use get_entity instead of search
-        - For domain-specific searches, include the domain in the query
-        - Use a reasonable limit (10-20) for most searches to reduce token usage
     """
     logger.info(f"Searching for entities matching: '{query}' with limit: {limit}")
     
-    if not query or not query.strip():
-        return {"error": "No search query provided", "count": 0, "results": [], "domains": {}}
+    # Special case - treat "*" as empty query to just return entities without filtering
+    if query == "*":
+        query = ""
+        logger.info("Converting '*' to empty query (retrieving all entities up to limit)")
     
+    # Handle empty query as a special case to just return entities up to the limit
+    if not query or not query.strip():
+        logger.info(f"Empty query - retrieving up to {limit} entities without filtering")
+        entities = await get_entities(limit=limit, lean=True)
+        
+        # Check if there was an error
+        if isinstance(entities, dict) and "error" in entities:
+            return {"error": entities["error"], "count": 0, "results": [], "domains": {}}
+        
+        # No query, but we'll return a structured result anyway
+        domains_count = {}
+        simplified_entities = []
+        
+        for entity in entities:
+            domain = entity["entity_id"].split(".")[0]
+            
+            # Count domains
+            if domain not in domains_count:
+                domains_count[domain] = 0
+            domains_count[domain] += 1
+            
+            # Create simplified entity representation
+            simplified_entity = {
+                "entity_id": entity["entity_id"],
+                "state": entity["state"],
+                "domain": domain,
+                "friendly_name": entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
+            }
+            
+            # Add key attributes based on domain
+            attributes = entity.get("attributes", {})
+            
+            # Include domain-specific important attributes
+            if domain == "light" and "brightness" in attributes:
+                simplified_entity["brightness"] = attributes["brightness"]
+            elif domain == "sensor" and "unit_of_measurement" in attributes:
+                simplified_entity["unit"] = attributes["unit_of_measurement"]
+            elif domain == "climate" and "temperature" in attributes:
+                simplified_entity["temperature"] = attributes["temperature"]
+            elif domain == "media_player" and "media_title" in attributes:
+                simplified_entity["media_title"] = attributes["media_title"]
+            
+            simplified_entities.append(simplified_entity)
+        
+        # Return structured response for empty query
+        return {
+            "count": len(simplified_entities),
+            "results": simplified_entities,
+            "domains": domains_count,
+            "query": "all entities (no filtering)"
+        }
+    
+    # Normal search with non-empty query
     entities = await get_entities(search_query=query, limit=limit, lean=True)
     
     # Check if there was an error
@@ -638,9 +628,6 @@ async def domain_summary_tool(domain: str, example_limit: int = 3) -> Dict[str, 
     """
     Get a summary of entities in a specific domain
     
-    This function provides a token-efficient overview of all entities in a specific domain.
-    It's ideal for understanding what's available without retrieving full entity details.
-    
     Args:
         domain: The domain to summarize (e.g., 'light', 'switch', 'sensor')
         example_limit: Maximum number of examples to include for each state
@@ -653,27 +640,145 @@ async def domain_summary_tool(domain: str, example_limit: int = 3) -> Dict[str, 
         - common_attributes: Most frequently occurring attributes
         
     Examples:
-        ```python
-        # Get summary of lights
-        light_summary = await domain_summary_tool("light")
-        # Number of lights: light_summary['total_count']
-        # Lights that are on: light_summary['state_distribution'].get('on', 0)
-        
-        # Get climate devices with more examples
-        climate_summary = await domain_summary_tool("climate", example_limit=5)
-        
-        # Get sensor summary
-        sensor_summary = await domain_summary_tool("sensor")
-        # Most common sensor attributes: sensor_summary['common_attributes']
-        ```
-    
+        domain="light" - get light summary
+        domain="climate", example_limit=5 - climate summary with more examples
     Best Practices:
-        - Use this before retrieving all entities in a domain to understand what's available
-        - Great for reporting on home status (e.g., "5 lights are on, 12 are off")
-        - 10-100x more token-efficient than retrieving all entities
-    """
+        - Use this before retrieving all entities in a domain to understand what's available    """
     logger.info(f"Getting domain summary for: {domain}")
     return await summarize_domain(domain, example_limit)
+
+@mcp.tool()
+@async_handler("system_overview")
+async def system_overview() -> Dict[str, Any]:
+    """
+    Get a comprehensive overview of the entire Home Assistant system
+    
+    Returns:
+        A dictionary containing:
+        - total_entities: Total count of all entities
+        - domains: Dictionary of domains with their entity counts and state distributions
+        - domain_samples: Representative sample entities for each domain (2-3 per domain)
+        - domain_attributes: Common attributes for each domain
+        - area_distribution: Entities grouped by area (if available)
+        
+    Examples:
+        Returns domain counts, sample entities, and common attributes
+    Best Practices:
+        - Use this as the first call when exploring an unfamiliar Home Assistant instance
+        - Perfect for building context about the structure of the smart home
+        - After getting an overview, use domain_summary_tool to dig deeper into specific domains
+    """
+    logger.info("Generating complete system overview")
+    
+    try:
+        # Get ALL entities with minimal fields for efficiency
+        # We retrieve all entities since API calls don't consume tokens, only responses do
+        client = await get_client()
+        response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
+        response.raise_for_status()
+        all_entities_raw = response.json()
+        
+        # Apply lean formatting to reduce token usage in the response
+        all_entities = []
+        for entity in all_entities_raw:
+            domain = entity["entity_id"].split(".")[0]
+            
+            # Start with basic lean fields
+            lean_fields = ["entity_id", "state", "attr.friendly_name"]
+            
+            # Add domain-specific important attributes
+            if domain in DOMAIN_IMPORTANT_ATTRIBUTES:
+                for attr in DOMAIN_IMPORTANT_ATTRIBUTES[domain]:
+                    lean_fields.append(f"attr.{attr}")
+            
+            # Filter and add to result
+            all_entities.append(filter_fields(entity, lean_fields))
+        
+        # Initialize overview structure
+        overview = {
+            "total_entities": len(all_entities),
+            "domains": {},
+            "domain_samples": {},
+            "domain_attributes": {},
+            "area_distribution": {}
+        }
+        
+        # Group entities by domain
+        domain_entities = {}
+        for entity in all_entities:
+            domain = entity["entity_id"].split(".")[0]
+            if domain not in domain_entities:
+                domain_entities[domain] = []
+            domain_entities[domain].append(entity)
+        
+        # Process each domain
+        for domain, entities in domain_entities.items():
+            # Count entities in this domain
+            count = len(entities)
+            
+            # Collect state distribution
+            state_distribution = {}
+            for entity in entities:
+                state = entity.get("state", "unknown")
+                if state not in state_distribution:
+                    state_distribution[state] = 0
+                state_distribution[state] += 1
+            
+            # Store domain information
+            overview["domains"][domain] = {
+                "count": count,
+                "states": state_distribution
+            }
+            
+            # Select representative samples (2-3 per domain)
+            sample_limit = min(3, count)
+            samples = []
+            for i in range(sample_limit):
+                entity = entities[i]
+                samples.append({
+                    "entity_id": entity["entity_id"],
+                    "state": entity.get("state", "unknown"),
+                    "friendly_name": entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
+                })
+            overview["domain_samples"][domain] = samples
+            
+            # Collect common attributes for this domain
+            attribute_counts = {}
+            for entity in entities:
+                for attr in entity.get("attributes", {}):
+                    if attr not in attribute_counts:
+                        attribute_counts[attr] = 0
+                    attribute_counts[attr] += 1
+            
+            # Get top 5 most common attributes for this domain
+            common_attributes = sorted(attribute_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            overview["domain_attributes"][domain] = [attr for attr, count in common_attributes]
+            
+            # Group by area if available
+            for entity in entities:
+                area_id = entity.get("attributes", {}).get("area_id", "Unknown")
+                area_name = entity.get("attributes", {}).get("area_name", area_id)
+                
+                if area_name not in overview["area_distribution"]:
+                    overview["area_distribution"][area_name] = {}
+                
+                if domain not in overview["area_distribution"][area_name]:
+                    overview["area_distribution"][area_name][domain] = 0
+                    
+                overview["area_distribution"][area_name][domain] += 1
+        
+        # Add summary information
+        overview["domain_count"] = len(domain_entities)
+        overview["most_common_domains"] = sorted(
+            [(domain, len(entities)) for domain, entities in domain_entities.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:5]
+        
+        return overview
+    except Exception as e:
+        logger.error(f"Error generating system overview: {str(e)}")
+        return {"error": f"Error generating system overview: {str(e)}"}
 
 @mcp.resource("hass://entities/{entity_id}/detailed")
 @async_handler("get_entity_resource_detailed")
@@ -861,21 +966,8 @@ async def list_automations() -> List[Dict[str, Any]]:
         state, and alias (friendly name) fields.
         
     Examples:
-        ```python
-        # Get all automations
-        automations = await list_automations()
-        
-        # Find a specific automation by name
-        morning_routine = next(
-            (a for a in await list_automations() 
-             if "morning" in a.get("alias", "").lower()),
-            None
-        )
-        ```
+        Returns all automation objects with state and friendly names
     
-    Best Practices:
-        - Automations are less numerous than entities, so retrieving all at once is usually efficient
-        - Use entity_action with automation domain to trigger specific automations
     """
     logger.info("Getting all automations")
     try:
@@ -907,21 +999,10 @@ async def restart_ha() -> Dict[str, Any]:
     """
     Restart Home Assistant
     
-    Initiates a restart of the Home Assistant server. This is useful when you've made
-    configuration changes that require a restart to take effect.
-    
-    ⚠️ WARNING: This will temporarily disrupt Home Assistant operations and may
-    disconnect clients. Use sparingly and only when absolutely necessary.
+    ⚠️ WARNING: Temporarily disrupts all Home Assistant operations
     
     Returns:
-        A dictionary with the result of the restart operation
-        
-    Example:
-        ```python
-        # Restart Home Assistant
-        result = await restart_ha()
-        # Home Assistant is now restarting, it may take several seconds to complete
-        ```
+        Result of restart operation
     """
     logger.info("Restarting Home Assistant")
     return await restart_home_assistant()
@@ -931,10 +1012,7 @@ async def restart_ha() -> Dict[str, Any]:
 @async_handler("call_service")
 async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Call any Home Assistant service
-    
-    This is a low-level tool for calling any service not covered by the more specific
-    entity_action tool. It provides direct access to Home Assistant's service API.
+    Call any Home Assistant service (low-level API access)
     
     Args:
         domain: The domain of the service (e.g., 'light', 'switch', 'automation')
@@ -945,33 +1023,10 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
         The response from Home Assistant (usually empty for successful calls)
     
     Examples:
-        ```python
-        # Call a light service with specific parameters
-        result = await call_service('light', 'turn_on', {
-            'entity_id': 'light.living_room', 
-            'brightness': 255
-        })
-        
-        # Reload automations
-        result = await call_service('automation', 'reload', {})
-        
-        # Toggle a switch
-        result = await call_service('switch', 'toggle', {
-            'entity_id': 'switch.garden_lights'
-        })
-        
-        # Set fan speed
-        result = await call_service('fan', 'set_percentage', {
-            'entity_id': 'fan.bedroom',
-            'percentage': 50
-        })
-        ```
+        domain='light', service='turn_on', data={'entity_id': 'light.x', 'brightness': 255}
+        domain='automation', service='reload'
+        domain='fan', service='set_percentage', data={'entity_id': 'fan.x', 'percentage': 50}
     
-    Best Practices:
-        - For simple on/off/toggle operations, prefer entity_action over call_service
-        - For entity control, always include 'entity_id' in the data parameter
-        - Check entity attributes (via get_entity) before calling services to ensure 
-          the entity supports the service and parameters you're using
     """
     logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
     return await call_service(domain, service, data or {})
@@ -1207,10 +1262,6 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     """
     Get the history of an entity's state changes
     
-    This tool provides the state change history for a specific entity over a
-    specified time period. It's useful for analyzing patterns, troubleshooting,
-    and understanding how an entity's state changes over time.
-    
     Args:
         entity_id: The entity ID to get history for
         hours: Number of hours of history to retrieve (default: 24)
@@ -1224,18 +1275,12 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
         - last_changed: Timestamp of most recent state change
         
     Examples:
-        ```python
-        # Get last 24 hours of history for a light
-        history = await get_history("light.living_room")
-        
-        # Get last 7 days of history for a sensor
-        history = await get_history("sensor.temperature", hours=168)
-        ```
-        
+        entity_id="light.living_room" - get 24h history
+        entity_id="sensor.temperature", hours=168 - get 7 day history
     Best Practices:
         - Keep hours reasonable (24-72) for token efficiency
         - Use for entities with discrete state changes rather than continuously changing sensors
-        - Consider the state distribution rather than every individual state
+        - Consider the state distribution rather than every individual state    
     """
     logger.info(f"Getting history for entity: {entity_id}, hours: {hours}")
     
@@ -1285,12 +1330,7 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
 @async_handler("get_error_log")
 async def get_error_log() -> Dict[str, Any]:
     """
-    Get the Home Assistant error log
-    
-    This tool provides direct access to the Home Assistant error log,
-    which is useful for troubleshooting issues with Home Assistant itself.
-    The log contains errors, warnings, and other important messages that
-    can help identify problems with components, integrations, or automations.
+    Get the Home Assistant error log for troubleshooting
     
     Returns:
         A dictionary containing:
@@ -1301,22 +1341,12 @@ async def get_error_log() -> Dict[str, Any]:
         - error: Error message if retrieval failed
         
     Examples:
-        ```python
-        # Get the error log and count errors
-        log_data = await get_error_log()
-        print(f"Found {log_data['error_count']} errors and {log_data['warning_count']} warnings")
-        
-        # Look for specific integration issues
-        for integration, count in log_data['integration_mentions'].items():
-            if count > 5:  # Many mentions might indicate problems
-                print(f"Integration {integration} mentioned {count} times")
-        ```
-        
+        Returns errors, warnings count and integration mentions
     Best Practices:
         - Use this tool when troubleshooting specific Home Assistant errors
         - Look for patterns in repeated errors
         - Pay attention to timestamps to correlate errors with events
-        - Focus on integrations with many mentions in the log
+        - Focus on integrations with many mentions in the log    
     """
     logger.info("Getting Home Assistant error log")
     

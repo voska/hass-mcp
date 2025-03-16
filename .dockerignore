@@ -1,0 +1,36 @@
+# Ignore version control files
+.git
+.gitignore
+
+# Ignore Docker and CI files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Ignore Python cache files
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+
+# Ignore environment and local files
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Ignore tests and documentation
+tests/
+docs/
+CONTRIBUTING.md
+CHANGELOG.md
+
+# Ignore development tools
+.vscode/
+.idea/
+*.swp
+*.swo

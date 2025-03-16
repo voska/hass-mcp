@@ -14,10 +14,10 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 - Create guided conversations for common tasks
 
 ## Screenshots
+
 <img width="700" alt="Screenshot 2025-03-16 at 15 48 01" src="https://github.com/user-attachments/assets/5f9773b4-6aef-4139-a978-8ec2cc8c0aea" />
 <img width="400" alt="Screenshot 2025-03-16 at 15 50 59" src="https://github.com/user-attachments/assets/17e1854a-9399-4e6d-92cf-cf223a93466e" />
 <img width="400" alt="Screenshot 2025-03-16 at 15 49 26" src="https://github.com/user-attachments/assets/4565f3cd-7e75-4472-985c-7841e1ad6ba8" />
-
 
 ## Features
 
@@ -32,64 +32,90 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 
 ### Prerequisites
 
-- Python 3.13+
 - Home Assistant instance with Long-Lived Access Token
-- [uv](https://github.com/astral-sh/uv)
+- One of the following:
+  - Docker (recommended)
+  - Python 3.13+ and [uv](https://github.com/astral-sh/uv)
 
-### Installation Steps
+## Setting Up With Claude Desktop
 
-1. Clone the repository:
+### Docker Installation (Recommended)
 
-   ```bash
-   git clone https://github.com/voska/hass-mcp.git
-   cd hass-mcp
-   ```
-
-2. Create a virtual environment and install dependencies:
+1. Pull the Docker image:
 
    ```bash
-   uv venv
-   source .venv/bin/activate
-   uv pip install -e .
+   docker pull voska/hass-mcp:latest
    ```
 
-3. Create a `.env` file with your Home Assistant credentials:
-   ```bash
-   cp .env.example .env
+2. Add the MCP server to Claude Desktop:
+
+   a. Open Claude Desktop and go to Settings
+   b. Navigate to Developer > Edit Config
+   c. Add the following configuration to your `claude_desktop_config.json` file:
+
+   ```json
+   {
+     "mcpServers": {
+       "hass-mcp": {
+         "command": "docker",
+         "args": [
+           "run",
+           "-i",
+           "--rm",
+           "-e",
+           "HA_URL",
+           "-e",
+           "HA_TOKEN",
+           "voska/hass-mcp"
+         ],
+         "env": {
+           "HA_URL": "http://homeassistant.local:8123",
+           "HA_TOKEN": "YOUR_LONG_LIVED_TOKEN"
+         }
+       }
+     }
+   }
    ```
 
-## Setting Up With Claude Tools
+   d. Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant long-lived access token
+   e. Update the `HA_URL`:
 
-### Claude Desktop
+   - If running Home Assistant on the same machine: use `http://host.docker.internal:8123` (Docker Desktop on Mac/Windows)
+   - If running Home Assistant on another machine: use the actual IP or hostname
 
-1. Install the server in Claude Desktop:
+   f. Save the file and restart Claude Desktop
 
-   ```bash
-   uv run mcp install app/server.py -e . -f .env
-   ```
+3. The "Hass-MCP" tool should now appear in your Claude Desktop tools menu
 
-2. Open Claude Desktop and you should see "Hass-MCP" in the available tools dropdown.
+> **Note**: If you're running Home Assistant in Docker on the same machine, you may need to add `--network host` to the Docker args for the container to access Home Assistant. Alternatively, use the IP address of your machine instead of `host.docker.internal`.
+
+## Other MCP Clients
 
 ### Cursor
 
-1. Go to Cursor Settings > Features > MCP
-2. Click "+ Add New MCP Server"
-3. Fill in the form:
-   - Enter server name "Hass-MCP"
-   - Select type "command"
-   - For command, enter the full path to Python and the server script:
+1. Go to Cursor Settings > MCP > Add New MCP Server
+2. Fill in the form:
+   - Name: `Hass-MCP`
+   - Type: `command`
+   - Command:
      ```
-     uv run --with mcp[cli] mcp run /PATH/TO/hass-mcp/app/server.py
+     docker run -i --rm -e HA_URL=http://homeassistant.local:8123 -e HA_TOKEN=YOUR_LONG_LIVED_TOKEN voska/hass-mcp
      ```
-   - Add environment variables for HA_URL and HA_TOKEN
+   - Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant token
+   - Update the HA_URL to match your Home Assistant instance address
+3. Click "Add" to save
 
 ### Claude Code (CLI)
 
 To use with Claude Code CLI, you can add the MCP server directly using the `mcp add` command:
 
+**Using Docker (recommended):**
+
 ```bash
-claude mcp add hass-mcp -e HA_URL=http://your-home-assistant-url:8123 -e HA_TOKEN=your_token -- uv run --with mcp[cli] mcp run /PATH/TO/hass-mcp/app/server.py
+claude mcp add hass-mcp -e HA_URL=http://homeassistant.local:8123 -e HA_TOKEN=YOUR_LONG_LIVED_TOKEN -- docker run -i --rm -e HA_URL -e HA_TOKEN voska/hass-mcp
 ```
+
+Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant token and update the HA_URL to match your Home Assistant instance address.
 
 ## Usage Examples
 
