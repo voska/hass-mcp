@@ -2,7 +2,6 @@ import httpx
 from typing import Dict, Any, Optional, List, TypeVar, Callable, Awaitable, Union, cast
 import functools
 import inspect
-import time
 import logging
 
 from app.config import HA_URL, HA_TOKEN, get_ha_headers
@@ -437,4 +436,3 @@ async def reload_automations() -> Dict[str, Any]:
 async def restart_home_assistant() -> Dict[str, Any]:
     """Restart Home Assistant"""
     return await call_service("homeassistant", "restart", {})
-
