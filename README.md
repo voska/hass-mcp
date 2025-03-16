@@ -13,6 +13,12 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 - Search for specific entities
 - Create guided conversations for common tasks
 
+## Screenshots
+<img width="700" alt="Screenshot 2025-03-16 at 15 48 01" src="https://github.com/user-attachments/assets/5f9773b4-6aef-4139-a978-8ec2cc8c0aea" />
+<img width="400" alt="Screenshot 2025-03-16 at 15 50 59" src="https://github.com/user-attachments/assets/17e1854a-9399-4e6d-92cf-cf223a93466e" />
+<img width="400" alt="Screenshot 2025-03-16 at 15 49 26" src="https://github.com/user-attachments/assets/4565f3cd-7e75-4472-985c-7841e1ad6ba8" />
+
+
 ## Features
 
 - **Entity Management**: Get states, control devices, and search for entities
