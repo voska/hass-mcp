@@ -436,3 +436,190 @@ async def reload_automations() -> Dict[str, Any]:
 async def restart_home_assistant() -> Dict[str, Any]:
     """Restart Home Assistant"""
     return await call_service("homeassistant", "restart", {})
+
+@handle_api_errors
+async def get_hass_error_log() -> Dict[str, Any]:
+    """
+    Get the Home Assistant error log for troubleshooting
+    
+    Returns:
+        A dictionary containing:
+        - log_text: The full error log text
+        - error_count: Number of ERROR entries found
+        - warning_count: Number of WARNING entries found
+        - integration_mentions: Map of integration names to mention counts
+        - error: Error message if retrieval failed
+    """
+    try:
+        # Call the Home Assistant API error_log endpoint
+        url = f"{HA_URL}/api/error_log"
+        headers = get_ha_headers()
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                log_text = response.text
+                
+                # Count errors and warnings
+                error_count = log_text.count("ERROR")
+                warning_count = log_text.count("WARNING")
+                
+                # Extract integration mentions
+                import re
+                integration_mentions = {}
+                
+                # Look for patterns like [mqtt], [zwave], etc.
+                for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
+                    integration = match.group(1).lower()
+                    if integration not in integration_mentions:
+                        integration_mentions[integration] = 0
+                    integration_mentions[integration] += 1
+                
+                return {
+                    "log_text": log_text,
+                    "error_count": error_count,
+                    "warning_count": warning_count,
+                    "integration_mentions": integration_mentions
+                }
+            else:
+                return {
+                    "error": f"Error retrieving error log: {response.status_code} {response.reason_phrase}",
+                    "details": response.text,
+                    "log_text": "",
+                    "error_count": 0,
+                    "warning_count": 0,
+                    "integration_mentions": {}
+                }
+    except Exception as e:
+        logger.error(f"Error retrieving Home Assistant error log: {str(e)}")
+        return {
+            "error": f"Error retrieving error log: {str(e)}",
+            "log_text": "",
+            "error_count": 0,
+            "warning_count": 0,
+            "integration_mentions": {}
+        }
+
+@handle_api_errors
+async def get_system_overview() -> Dict[str, Any]:
+    """
+    Get a comprehensive overview of the entire Home Assistant system
+    
+    Returns:
+        A dictionary containing:
+        - total_entities: Total count of all entities
+        - domains: Dictionary of domains with their entity counts and state distributions
+        - domain_samples: Representative sample entities for each domain (2-3 per domain)
+        - domain_attributes: Common attributes for each domain
+        - area_distribution: Entities grouped by area (if available)
+    """
+    try:
+        # Get ALL entities with minimal fields for efficiency
+        # We retrieve all entities since API calls don't consume tokens, only responses do
+        client = await get_client()
+        response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
+        response.raise_for_status()
+        all_entities_raw = response.json()
+        
+        # Apply lean formatting to reduce token usage in the response
+        all_entities = []
+        for entity in all_entities_raw:
+            domain = entity["entity_id"].split(".")[0]
+            
+            # Start with basic lean fields
+            lean_fields = ["entity_id", "state", "attr.friendly_name"]
+            
+            # Add domain-specific important attributes
+            if domain in DOMAIN_IMPORTANT_ATTRIBUTES:
+                for attr in DOMAIN_IMPORTANT_ATTRIBUTES[domain]:
+                    lean_fields.append(f"attr.{attr}")
+            
+            # Filter and add to result
+            all_entities.append(filter_fields(entity, lean_fields))
+        
+        # Initialize overview structure
+        overview = {
+            "total_entities": len(all_entities),
+            "domains": {},
+            "domain_samples": {},
+            "domain_attributes": {},
+            "area_distribution": {}
+        }
+        
+        # Group entities by domain
+        domain_entities = {}
+        for entity in all_entities:
+            domain = entity["entity_id"].split(".")[0]
+            if domain not in domain_entities:
+                domain_entities[domain] = []
+            domain_entities[domain].append(entity)
+        
+        # Process each domain
+        for domain, entities in domain_entities.items():
+            # Count entities in this domain
+            count = len(entities)
+            
+            # Collect state distribution
+            state_distribution = {}
+            for entity in entities:
+                state = entity.get("state", "unknown")
+                if state not in state_distribution:
+                    state_distribution[state] = 0
+                state_distribution[state] += 1
+            
+            # Store domain information
+            overview["domains"][domain] = {
+                "count": count,
+                "states": state_distribution
+            }
+            
+            # Select representative samples (2-3 per domain)
+            sample_limit = min(3, count)
+            samples = []
+            for i in range(sample_limit):
+                entity = entities[i]
+                samples.append({
+                    "entity_id": entity["entity_id"],
+                    "state": entity.get("state", "unknown"),
+                    "friendly_name": entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
+                })
+            overview["domain_samples"][domain] = samples
+            
+            # Collect common attributes for this domain
+            attribute_counts = {}
+            for entity in entities:
+                for attr in entity.get("attributes", {}):
+                    if attr not in attribute_counts:
+                        attribute_counts[attr] = 0
+                    attribute_counts[attr] += 1
+            
+            # Get top 5 most common attributes for this domain
+            common_attributes = sorted(attribute_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            overview["domain_attributes"][domain] = [attr for attr, count in common_attributes]
+            
+            # Group by area if available
+            for entity in entities:
+                area_id = entity.get("attributes", {}).get("area_id", "Unknown")
+                area_name = entity.get("attributes", {}).get("area_name", area_id)
+                
+                if area_name not in overview["area_distribution"]:
+                    overview["area_distribution"][area_name] = {}
+                
+                if domain not in overview["area_distribution"][area_name]:
+                    overview["area_distribution"][area_name][domain] = 0
+                    
+                overview["area_distribution"][area_name][domain] += 1
+        
+        # Add summary information
+        overview["domain_count"] = len(domain_entities)
+        overview["most_common_domains"] = sorted(
+            [(domain, len(entities)) for domain, entities in domain_entities.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:5]
+        
+        return overview
+    except Exception as e:
+        logger.error(f"Error generating system overview: {str(e)}")
+        return {"error": f"Error generating system overview: {str(e)}"}

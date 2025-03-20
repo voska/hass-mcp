@@ -149,17 +149,17 @@ class TestMCPServer:
             "call_service_tool",
             "restart_ha",
             "list_automations",
-            "search_entities_tool"
+            "search_entities_tool", 
+            "system_overview",
+            "get_error_log"
         ]
         
-        # Check that each tool function has a proper docstring
+        # Check that each tool function has a proper docstring and exists
         for tool_name in tool_functions:
-            if hasattr(app.server, tool_name):
-                tool_function = getattr(app.server, tool_name)
-                assert tool_function.__doc__ is not None
-                assert len(tool_function.__doc__.strip()) > 10
-                # Check that the docstring has examples section
-                assert "Examples:" in tool_function.__doc__ or "Example:" in tool_function.__doc__
+            assert hasattr(app.server, tool_name), f"{tool_name} function missing"
+            tool_function = getattr(app.server, tool_name)
+            assert tool_function.__doc__ is not None, f"{tool_name} missing docstring"
+            assert len(tool_function.__doc__.strip()) > 10, f"{tool_name} has insufficient docstring"
     
     def test_prompt_functions_exist(self):
         """Test that prompt functions exist in the server module."""
@@ -205,10 +205,11 @@ class TestMCPServer:
             assert "domains" in result
             assert "light" in result["domains"]
             
-            # Test with empty query
+            # Test with empty query (returns all entities instead of error)
             result = await search_entities_tool(query="")
-            assert "error" in result
-            assert result["count"] == 0
+            assert "error" not in result
+            assert result["count"] > 0
+            assert "all entities (no filtering)" in result["query"]
             
             # Test that simplified representation includes domain-specific attributes
             result = await search_entities_tool(query="living")

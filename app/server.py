@@ -14,12 +14,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Now we can import from the app package
-from app.config import HA_URL, HA_TOKEN
 from app.hass import (
     get_hass_version, get_entity_state, call_service, get_entities,
-    get_automations, restart_home_assistant,
-    cleanup_client, filter_fields, summarize_domain
+    get_automations, restart_home_assistant, 
+    cleanup_client, filter_fields, summarize_domain, get_system_overview,
+    get_hass_error_log
 )
 
 # Type variable for generic functions
@@ -50,7 +49,6 @@ def async_handler(command_type: str):
         return cast(Callable[..., Awaitable[T]], wrapper)
     return decorator
 
-
 @mcp.tool()
 @async_handler("get_version")
 async def get_version() -> str:
@@ -62,9 +60,6 @@ async def get_version() -> str:
     """
     logger.info("Getting Home Assistant version")
     return await get_hass_version()
-
-
-
 
 @mcp.tool()
 @async_handler("get_entity")
@@ -92,7 +87,6 @@ async def get_entity(entity_id: str, fields: Optional[List[str]] = None, detaile
     else:
         # Return lean format with essential fields
         return await get_entity_state(entity_id, lean=True)
-
 
 @mcp.tool()
 @async_handler("entity_action")
@@ -133,7 +127,6 @@ async def entity_action(entity_id: str, action: str, **params) -> dict:
     
     logger.info(f"Performing action '{action}' on entity: {entity_id} with params: {params}")
     return await call_service(domain, service, data)
-
 
 @mcp.resource("hass://entities/{entity_id}")
 @async_handler("get_entity_resource")
@@ -237,9 +230,6 @@ async def get_entity_resource(entity_id: str) -> str:
     
     return result
 
-
-
-
 @mcp.tool()
 @async_handler("list_entities")
 async def list_entities(
@@ -305,9 +295,6 @@ async def list_entities(
         fields=fields,
         lean=not detailed  # Use lean format unless detailed is requested
     )
-
-
-
 
 @mcp.resource("hass://entities")
 @async_handler("get_all_entities_resource")
@@ -669,116 +656,7 @@ async def system_overview() -> Dict[str, Any]:
         - After getting an overview, use domain_summary_tool to dig deeper into specific domains
     """
     logger.info("Generating complete system overview")
-    
-    try:
-        # Get ALL entities with minimal fields for efficiency
-        # We retrieve all entities since API calls don't consume tokens, only responses do
-        client = await get_client()
-        response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
-        response.raise_for_status()
-        all_entities_raw = response.json()
-        
-        # Apply lean formatting to reduce token usage in the response
-        all_entities = []
-        for entity in all_entities_raw:
-            domain = entity["entity_id"].split(".")[0]
-            
-            # Start with basic lean fields
-            lean_fields = ["entity_id", "state", "attr.friendly_name"]
-            
-            # Add domain-specific important attributes
-            if domain in DOMAIN_IMPORTANT_ATTRIBUTES:
-                for attr in DOMAIN_IMPORTANT_ATTRIBUTES[domain]:
-                    lean_fields.append(f"attr.{attr}")
-            
-            # Filter and add to result
-            all_entities.append(filter_fields(entity, lean_fields))
-        
-        # Initialize overview structure
-        overview = {
-            "total_entities": len(all_entities),
-            "domains": {},
-            "domain_samples": {},
-            "domain_attributes": {},
-            "area_distribution": {}
-        }
-        
-        # Group entities by domain
-        domain_entities = {}
-        for entity in all_entities:
-            domain = entity["entity_id"].split(".")[0]
-            if domain not in domain_entities:
-                domain_entities[domain] = []
-            domain_entities[domain].append(entity)
-        
-        # Process each domain
-        for domain, entities in domain_entities.items():
-            # Count entities in this domain
-            count = len(entities)
-            
-            # Collect state distribution
-            state_distribution = {}
-            for entity in entities:
-                state = entity.get("state", "unknown")
-                if state not in state_distribution:
-                    state_distribution[state] = 0
-                state_distribution[state] += 1
-            
-            # Store domain information
-            overview["domains"][domain] = {
-                "count": count,
-                "states": state_distribution
-            }
-            
-            # Select representative samples (2-3 per domain)
-            sample_limit = min(3, count)
-            samples = []
-            for i in range(sample_limit):
-                entity = entities[i]
-                samples.append({
-                    "entity_id": entity["entity_id"],
-                    "state": entity.get("state", "unknown"),
-                    "friendly_name": entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
-                })
-            overview["domain_samples"][domain] = samples
-            
-            # Collect common attributes for this domain
-            attribute_counts = {}
-            for entity in entities:
-                for attr in entity.get("attributes", {}):
-                    if attr not in attribute_counts:
-                        attribute_counts[attr] = 0
-                    attribute_counts[attr] += 1
-            
-            # Get top 5 most common attributes for this domain
-            common_attributes = sorted(attribute_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-            overview["domain_attributes"][domain] = [attr for attr, count in common_attributes]
-            
-            # Group by area if available
-            for entity in entities:
-                area_id = entity.get("attributes", {}).get("area_id", "Unknown")
-                area_name = entity.get("attributes", {}).get("area_name", area_id)
-                
-                if area_name not in overview["area_distribution"]:
-                    overview["area_distribution"][area_name] = {}
-                
-                if domain not in overview["area_distribution"][area_name]:
-                    overview["area_distribution"][area_name][domain] = 0
-                    
-                overview["area_distribution"][area_name][domain] += 1
-        
-        # Add summary information
-        overview["domain_count"] = len(domain_entities)
-        overview["most_common_domains"] = sorted(
-            [(domain, len(entities)) for domain, entities in domain_entities.items()],
-            key=lambda x: x[1],
-            reverse=True
-        )[:5]
-        
-        return overview
-    except Exception as e:
-        logger.error(f"Error generating system overview: {str(e)}")
-        return {"error": f"Error generating system overview: {str(e)}"}
+    return await get_system_overview()
 
 @mcp.resource("hass://entities/{entity_id}/detailed")
 @async_handler("get_entity_resource_detailed")
@@ -949,8 +827,6 @@ async def list_states_by_domain_resource(domain: str) -> str:
     
     return result
 
-
-
 # Automation management MCP tools
 @mcp.tool()
 @async_handler("list_automations")
@@ -989,9 +865,7 @@ async def list_automations() -> List[Dict[str, Any]]:
         logger.error(f"Error in list_automations: {str(e)}")
         return []
 
-
 # We already have a list_automations tool, so no need to duplicate functionality
-
 
 @mcp.tool()
 @async_handler("restart_ha")
@@ -1006,7 +880,6 @@ async def restart_ha() -> Dict[str, Any]:
     """
     logger.info("Restarting Home Assistant")
     return await restart_home_assistant()
-
 
 @mcp.tool()
 @async_handler("call_service")
@@ -1030,10 +903,6 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
     """
     logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
     return await call_service(domain, service, data or {})
-
-
-
-
 
 # Prompt functionality
 @mcp.prompt()
@@ -1349,57 +1218,4 @@ async def get_error_log() -> Dict[str, Any]:
         - Focus on integrations with many mentions in the log    
     """
     logger.info("Getting Home Assistant error log")
-    
-    try:
-        # Call the Home Assistant API error_log endpoint
-        url = f"{HA_URL}/api/error_log"
-        headers = {
-            "Authorization": f"Bearer {HA_TOKEN}",
-            "Content-Type": "application/json",
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                log_text = response.text
-                
-                # Count errors and warnings
-                error_count = log_text.count("ERROR")
-                warning_count = log_text.count("WARNING")
-                
-                # Extract integration mentions
-                import re
-                integration_mentions = {}
-                
-                # Look for patterns like [mqtt], [zwave], etc.
-                for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
-                    integration = match.group(1).lower()
-                    if integration not in integration_mentions:
-                        integration_mentions[integration] = 0
-                    integration_mentions[integration] += 1
-                
-                return {
-                    "log_text": log_text,
-                    "error_count": error_count,
-                    "warning_count": warning_count,
-                    "integration_mentions": integration_mentions
-                }
-            else:
-                return {
-                    "error": f"Error retrieving error log: {response.status_code} {response.reason_phrase}",
-                    "details": response.text,
-                    "log_text": "",
-                    "error_count": 0,
-                    "warning_count": 0,
-                    "integration_mentions": {}
-                }
-    except Exception as e:
-        logger.error(f"Error retrieving Home Assistant error log: {str(e)}")
-        return {
-            "error": f"Error retrieving error log: {str(e)}",
-            "log_text": "",
-            "error_count": 0,
-            "warning_count": 0,
-            "integration_mentions": {}
-        }
+    return await get_hass_error_log()
