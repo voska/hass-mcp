@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server for Home Assistant integration with Claude and other LLMs.
 
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/voska/hass-mcp)
+
 ## Overview
 
 Hass-MCP enables AI assistants like Claude to interact directly with your Home Assistant instance, allowing them to:
@@ -89,6 +91,30 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 
 > **Note**: If you're running Home Assistant in Docker on the same machine, you may need to add `--network host` to the Docker args for the container to access Home Assistant. Alternatively, use the IP address of your machine instead of `host.docker.internal`.
 
+### Direct Installation with Python
+
+1. Clone this repository:
+
+   ```bash
+   git clone https://github.com/yourusername/hass-mcp.git
+   cd hass-mcp
+   ```
+
+2. Install the server in Claude Desktop:
+
+   ```bash
+   uv run mcp install app/server.py -e . -f .env
+   ```
+
+3. Create a `.env` file with your Home Assistant connection details:
+
+   ```
+   HASS_URL=http://homeassistant.local:8123
+   HASS_TOKEN=your_long_lived_access_token_here
+   ```
+
+4. Restart Claude Desktop
+
 ## Other MCP Clients
 
 ### Cursor
@@ -122,7 +148,6 @@ Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant token and update
 Here are some examples of prompts you can use with Claude once Hass-MCP is set up:
 
 - "What's the current state of my living room lights?"
-- "Turn off all the lights in the kitchen"
 - "List all my sensors that contain temperature data"
 - "Give me a summary of my climate entities"
 - "Create an automation that turns on the lights at sunset"
@@ -131,41 +156,38 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 
 ## Available Tools
 
-Hass-MCP provides several tools for interacting with Home Assistant:
+Hass-MCP provides the following tools for interacting with Home Assistant:
 
-- `get_version`: Get the Home Assistant version
-- `get_entity`: Get the state of a specific entity with optional field filtering
-- `entity_action`: Perform actions on entities (turn on, off, toggle)
-- `list_entities`: Get a list of entities with optional domain filtering and search
-- `search_entities_tool`: Search for entities matching a query
-- `domain_summary_tool`: Get a summary of a domain's entities
-- `list_automations`: Get a list of all automations
-- `call_service_tool`: Call any Home Assistant service
-- `restart_ha`: Restart Home Assistant
-- `get_history`: Get the state history of an entity
-- `get_error_log`: Get the Home Assistant error log
+- `get_hass_version`: Get the Home Assistant version
+- `get_entity`: Get detailed information about a specific entity
+- `list_automations`: List all automations configured in Home Assistant
+- `list_entities`: List all entities, optionally filtered by domain
+- `search_entities`: Search for entities by name, state, or attributes
+- `get_system_overview`: Get a comprehensive overview of the entire Home Assistant system
+- `call_service`: Call any Home Assistant service (turn on lights, toggle switches, etc.)
+- `get_error_log`: Retrieve the Home Assistant error log with optional line limit
 
-## Prompts for Guided Conversations
+## Available Prompts for Guided Conversations
 
-Hass-MCP includes several prompts for guided conversations:
+Hass-MCP includes the following prompts for guided conversations:
 
-- `create_automation`: Guide for creating Home Assistant automations based on trigger type
+- `create_automation`: Interactive guide for creating custom Home Assistant automations with YAML examples
+
+## Planned Prompts
+
+Future versions of Hass-MCP will include additional prompts:
+
 - `debug_automation`: Troubleshooting help for automations that aren't working
 - `troubleshoot_entity`: Diagnose issues with entities
-- `routine_optimizer`: Analyze usage patterns and suggest optimized routines based on actual behavior
-- `automation_health_check`: Review all automations, find conflicts, redundancies, or improvement opportunities
-- `entity_naming_consistency`: Audit entity names and suggest standardization improvements
-- `dashboard_layout_generator`: Create optimized dashboards based on user preferences and usage patterns
+- And more!
 
-## Available Resources
+## Planned Resources
 
-Hass-MCP provides the following resource endpoints:
+Future versions of Hass-MCP will provide resource endpoints:
 
 - `hass://entities/{entity_id}`: Get the state of a specific entity
-- `hass://entities/{entity_id}/detailed`: Get detailed information about an entity with all attributes
-- `hass://entities`: List all Home Assistant entities grouped by domain
-- `hass://entities/domain/{domain}`: Get a list of entities for a specific domain
-- `hass://search/{query}/{limit}`: Search for entities matching a query with custom result limit
+- `hass://entities`: List all Home Assistant entities
+- And more!
 
 ## Development
 
@@ -174,6 +196,24 @@ Hass-MCP provides the following resource endpoints:
 ```bash
 uv run pytest tests/
 ```
+
+## Changelog
+
+### v0.2.0 WIP
+
+- **Complete rewrite** of the entire codebase for better stability and performance
+- Migrated to the official `homeassistant_api` Python package for backend connectivity
+- Fixed numerous bugs from v0.1.0 related to connection management and data handling
+- Added MCP prompt support using best practices from the specification
+- Enhanced token efficiency for all API responses
+- Significantly improved system overview and entity search capabilities
+- Added proper logging and error management
+
+### v0.1.0
+
+- Initial proof-of-concept release
+- Basic Home Assistant integration with limited functionality
+- Preliminary tools for entity access
 
 ## License
 

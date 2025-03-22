@@ -1,13 +1,6 @@
-#!/usr/bin/env python
-"""Entry point for running Hass-MCP as a module"""
+"""Command line entry point for Home Assistant MCP server."""
 
-from app.server import mcp
-
-
-def main():
-    """Run the MCP server with stdio communication"""
-    mcp.run()
-
+from app.server import main
 
 if __name__ == "__main__":
     main()
