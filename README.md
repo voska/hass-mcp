@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/voska-hass-mcp-badge.png)](https://mseep.ai/app/voska-hass-mcp)
+
 # Hass-MCP
 
 A Model Context Protocol (MCP) server for Home Assistant integration with Claude and other LLMs.
