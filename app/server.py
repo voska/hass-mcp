@@ -90,7 +90,7 @@ async def get_entity(entity_id: str, fields: Optional[List[str]] = None, detaile
 
 @mcp.tool()
 @async_handler("entity_action")
-async def entity_action(entity_id: str, action: str, params: Optional[Dict[str, Any]]) -> dict:
+async def entity_action(entity_id: str, action: str, params: Optional[Dict[str, Any]] = None) -> dict:
     """
     Perform an action on a Home Assistant entity (on, off, toggle)
     
@@ -123,7 +123,7 @@ async def entity_action(entity_id: str, action: str, params: Optional[Dict[str, 
     domain = entity_id.split(".")[0]
     
     # Prepare service data
-    data = {"entity_id": entity_id, **params}
+    data = {"entity_id": entity_id, **(params or {})}
     
     logger.info(f"Performing action '{action}' on entity: {entity_id} with params: {params}")
     return await call_service(domain, service, data)
