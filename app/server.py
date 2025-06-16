@@ -90,22 +90,22 @@ async def get_entity(entity_id: str, fields: Optional[List[str]] = None, detaile
 
 @mcp.tool()
 @async_handler("entity_action")
-async def entity_action(entity_id: str, action: str, **params) -> dict:
+async def entity_action(entity_id: str, action: str, params: Optional[Dict[str, Any]] = None) -> dict:
     """
     Perform an action on a Home Assistant entity (on, off, toggle)
     
     Args:
         entity_id: The entity ID to control (e.g. 'light.living_room')
         action: The action to perform ('on', 'off', 'toggle')
-        **params: Additional parameters for the service call
+        params: Optional dictionary of additional parameters for the service call
     
     Returns:
         The response from Home Assistant
     
     Examples:
-        entity_id="light.living_room", action="on", brightness=255
+        entity_id="light.living_room", action="on", params={"brightness": 255}
         entity_id="switch.garden_lights", action="off"
-        entity_id="climate.living_room", action="on", temperature=22.5
+        entity_id="climate.living_room", action="on", params={"temperature": 22.5}
     
     Domain-Specific Parameters:
         - Lights: brightness (0-255), color_temp, rgb_color, transition, effect
@@ -123,7 +123,7 @@ async def entity_action(entity_id: str, action: str, **params) -> dict:
     domain = entity_id.split(".")[0]
     
     # Prepare service data
-    data = {"entity_id": entity_id, **params}
+    data = {"entity_id": entity_id, **(params or {})}
     
     logger.info(f"Performing action '{action}' on entity: {entity_id} with params: {params}")
     return await call_service(domain, service, data)
