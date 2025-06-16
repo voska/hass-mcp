@@ -1,5 +1,7 @@
 # Hass-MCP
 
+[![smithery badge](https://smithery.ai/badge/@voska/hass-mcp)](https://smithery.ai/server/@voska/hass-mcp)
+
 A Model Context Protocol (MCP) server for Home Assistant integration with Claude and other LLMs.
 
 ## Overview
@@ -29,6 +31,14 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 - **Token Efficiency**: Lean JSON responses to minimize token usage
 
 ## Installation
+
+### Installing via Smithery
+
+To install Hass-MCP for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@voska/hass-mcp):
+
+```bash
+npx -y @smithery/cli install @voska/hass-mcp --client claude
+```
 
 ### Prerequisites
 
