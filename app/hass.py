@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List, TypeVar, Callable, Awaitable, Unio
 import functools
 import inspect
 import logging
+from datetime import datetime, timedelta, timezone
 
 from app.config import HA_URL, HA_TOKEN, get_ha_headers
 
@@ -500,6 +501,45 @@ async def get_hass_error_log() -> Dict[str, Any]:
             "warning_count": 0,
             "integration_mentions": {}
         }
+
+@handle_api_errors
+async def get_entity_history(entity_id: str, hours: int) -> List[Dict[str, Any]]:
+    """
+    Get the history of an entity's state changes from Home Assistant.
+
+    Args:
+        entity_id: The entity ID to get history for.
+        hours: Number of hours of history to retrieve.
+
+    Returns:
+        A list of state change objects, or an error dictionary.
+    """
+    client = await get_client()
+    
+    # Calculate the end time for the history lookup
+    end_time = datetime.now(timezone.utc)
+    end_time_iso = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Calculate the start time for the history lookup based on end_time
+    start_time = end_time - timedelta(hours=hours)
+    start_time_iso = start_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Construct the API URL
+    url = f"{HA_URL}/api/history/period/{start_time_iso}"
+    
+    # Set query parameters
+    params = {
+        "filter_entity_id": entity_id,
+        "minimal_response": "true",
+        "end_time": end_time_iso,
+    }
+    
+    # Make the API call
+    response = await client.get(url, headers=get_ha_headers(), params=params)
+    response.raise_for_status()
+    
+    # Return the JSON response
+    return response.json()
 
 @handle_api_errors
 async def get_system_overview() -> Dict[str, Any]:
