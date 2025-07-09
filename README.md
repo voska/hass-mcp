@@ -89,6 +89,44 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 
 > **Note**: If you're running Home Assistant in Docker on the same machine, you may need to add `--network host` to the Docker args for the container to access Home Assistant. Alternatively, use the IP address of your machine instead of `host.docker.internal`.
 
+### uv/uvx
+
+1. Install uv on your system.
+
+2. Add the MCP server to Claude Desktop:
+
+   a. Open Claude Desktop and go to Settings
+   b. Navigate to Developer > Edit Config
+   c. Add the following configuration to your `claude_desktop_config.json` file:
+
+   ```json
+   {
+     "mcpServers": {
+       "hass-mcp": {
+         "command": "sh",
+         "args": [
+           "-c",
+           "exec $(which uvx || echo uvx) --from git+https://github.com/voska/hass-mcp hass-mcp"
+         ],
+         "env": {
+           "HA_URL": "http://homeassistant.local:8123",
+           "HA_TOKEN": "YOUR_LONG_LIVED_TOKEN"
+         }
+       }
+     }
+   }
+   ```
+
+   d. Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant long-lived access token
+   e. Update the `HA_URL`:
+
+   - If running Home Assistant on the same machine: use `http://host.docker.internal:8123` (Docker Desktop on Mac/Windows)
+   - If running Home Assistant on another machine: use the actual IP or hostname
+
+   f. Save the file and restart Claude Desktop
+
+3. The "Hass-MCP" tool should now appear in your Claude Desktop tools menu
+
 ## Other MCP Clients
 
 ### Cursor
