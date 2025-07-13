@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "hass-mcp"
 version = "0.1.0"
@@ -13,6 +17,12 @@ dependencies = [
 test = [
     "pytest>=8.3.5",
 ]
+
+[project.scripts]
+hass-mcp = "app.run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
