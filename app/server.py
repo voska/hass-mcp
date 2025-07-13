@@ -18,7 +18,7 @@ from app.hass import (
     get_hass_version, get_entity_state, call_service, get_entities,
     get_automations, restart_home_assistant, 
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
-    get_hass_error_log
+    get_hass_error_log, get_entity_history
 )
 
 # Type variable for generic functions
@@ -1154,43 +1154,54 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     logger.info(f"Getting history for entity: {entity_id}, hours: {hours}")
     
     try:
-        # Get current state to ensure entity exists
-        current = await get_entity_state(entity_id, detailed=True)
-        if isinstance(current, dict) and "error" in current:
+        # Call the new hass function to get history
+        history_data = await get_entity_history(entity_id, hours)
+        
+        # Check for errors from the API call
+        if isinstance(history_data, dict) and "error" in history_data:
             return {
                 "entity_id": entity_id,
-                "error": current["error"],
+                "error": history_data["error"],
                 "states": [],
                 "count": 0
             }
         
-        # For now, this is a stub that returns minimal dummy data
-        # In a real implementation, this would call the Home Assistant history API
-        now = current.get("last_updated", "2023-03-15T12:00:00.000Z")
+        # The result from the API is a list of lists of state changes
+        # We need to flatten it and process it
+        states = []
+        if history_data and isinstance(history_data, list):
+            for state_list in history_data:
+                states.extend(state_list)
         
-        # Create a dummy history (would be replaced with real API call)
-        states = [
-            {
-                "state": current.get("state", "unknown"),
-                "last_changed": now,
-                "attributes": current.get("attributes", {})
+        if not states:
+            return {
+                "entity_id": entity_id,
+                "states": [],
+                "count": 0,
+                "first_changed": None,
+                "last_changed": None,
+                "note": "No state changes found in the specified timeframe."
             }
-        ]
         
-        # Add a note about this being placeholder data
+        # Sort states by last_changed timestamp
+        states.sort(key=lambda x: x.get("last_changed", ""))
+        
+        # Extract first and last changed timestamps
+        first_changed = states[0].get("last_changed")
+        last_changed = states[-1].get("last_changed")
+        
         return {
             "entity_id": entity_id,
             "states": states,
             "count": len(states),
-            "first_changed": now,
-            "last_changed": now,
-            "note": "This is placeholder data. Future versions will include real historical data."
+            "first_changed": first_changed,
+            "last_changed": last_changed
         }
     except Exception as e:
-        logger.error(f"Error retrieving history for {entity_id}: {str(e)}")
+        logger.error(f"Error processing history for {entity_id}: {str(e)}")
         return {
             "entity_id": entity_id,
-            "error": f"Error retrieving history: {str(e)}",
+            "error": f"Error processing history: {str(e)}",
             "states": [],
             "count": 0
         }

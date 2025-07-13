@@ -157,6 +157,57 @@ class TestHassAPI:
             assert "error" in automations
             assert "404" in automations["error"]
 
+    @pytest.mark.asyncio
+    async def test_get_entity_history(self, mock_config):
+        """Test getting entity history."""
+        entity_id = "sensor.temperature"
+        hours = 24
+
+        # Mock response data for history
+        mock_history_data = [
+            [
+                {
+                    "state": "25.0",
+                    "last_changed": "2025-06-30T10:00:00.000Z",
+                    "attributes": {"unit_of_measurement": "°C"}
+                },
+                {
+                    "state": "26.0",
+                    "last_changed": "2025-06-30T11:00:00.000Z",
+                    "attributes": {"unit_of_measurement": "°C"}
+                }
+            ]
+        ]
+
+        # Create mock response
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = mock_history_data
+
+        # Create properly awaitable mock
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        # Patch the client and HA_URL/HA_TOKEN
+        with patch('app.hass.get_client', return_value=mock_client):
+            with patch('app.hass.HA_URL', mock_config["hass_url"]):
+                with patch('app.hass.HA_TOKEN', mock_config["hass_token"]):
+                    from app.hass import get_entity_history
+                    history = await get_entity_history(entity_id, hours)
+
+                    # Assertions
+                    assert isinstance(history, list)
+                    assert len(history) == 1  # History API returns list of lists
+                    assert len(history[0]) == 2
+                    assert history[0][0]["state"] == "25.0"
+                    assert history[0][1]["state"] == "26.0"
+
+                    # Verify API was called correctly
+                    mock_client.get.assert_called_once()
+                    called_url = mock_client.get.call_args[0][0]
+                    assert f"{mock_config['hass_url']}/api/history/period/" in called_url
+                    assert mock_client.get.call_args[1]["params"]["filter_entity_id"] == entity_id
+
     def test_handle_api_errors_decorator(self):
         """Test the handle_api_errors decorator."""
         from app.hass import handle_api_errors
