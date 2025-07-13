@@ -16,10 +16,12 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=8.3.5",
+    "pytest-asyncio>=0.24.0",
 ]
 
 [project.scripts]
 hass-mcp = "app.run:main"
+test = "pytest:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -27,4 +29,12 @@ packages = ["app"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+log_cli = true
+log_cli_level = "INFO"
+markers = [
+    "asyncio: Tests that use asyncio"
+]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -1,14 +1,19 @@
-name: ci
+name: Docker Build & Push
 
 on:
-  push: {}
+  push:
+  workflow_dispatch:
 
 env:
   DOCKER_IMAGE: voska/hass-mcp
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   docker:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

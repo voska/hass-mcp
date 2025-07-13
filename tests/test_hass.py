@@ -132,30 +132,33 @@ class TestHassAPI:
             }
         ]
         
-        # For get_automations we need to mock the get_entities function
-        with patch('app.hass.get_entities', AsyncMock(return_value=mock_automation_states)):
-            # Test function
-            automations = await get_automations()
-            
-            # Assertions
-            assert isinstance(automations, list)
-            assert len(automations) == 2
-            
-            # Verify contents of first automation
-            assert automations[0]["entity_id"] == "automation.morning_lights"
-            assert automations[0]["state"] == "on"
-            assert automations[0]["alias"] == "Turn on lights in the morning"
-            assert automations[0]["last_triggered"] == "2025-03-15T07:00:00Z"
-            
-        # Test error response
-        with patch('app.hass.get_entities', AsyncMock(return_value={"error": "HTTP error: 404 - Not Found"})):
-            # Test function with error
-            automations = await get_automations()
-            
-            # In our new implementation, it should pass through the error
-            assert isinstance(automations, dict)
-            assert "error" in automations
-            assert "404" in automations["error"]
+        # Patch the token to avoid the "No token" error
+        with patch('app.hass.HA_TOKEN', mock_config["hass_token"]):
+            with patch('app.hass.HA_URL', mock_config["hass_url"]):
+                # For get_automations we need to mock the get_entities function
+                with patch('app.hass.get_entities', AsyncMock(return_value=mock_automation_states)):
+                    # Test function
+                    automations = await get_automations()
+                    
+                    # Assertions
+                    assert isinstance(automations, list)
+                    assert len(automations) == 2
+                    
+                    # Verify contents of first automation
+                    assert automations[0]["entity_id"] == "automation.morning_lights"
+                    assert automations[0]["state"] == "on"
+                    assert automations[0]["alias"] == "Turn on lights in the morning"
+                    assert automations[0]["last_triggered"] == "2025-03-15T07:00:00Z"
+                    
+                # Test error response
+                with patch('app.hass.get_entities', AsyncMock(return_value={"error": "HTTP error: 404 - Not Found"})):
+                    # Test function with error
+                    automations = await get_automations()
+                    
+                    # In our new implementation, it should pass through the error
+                    assert isinstance(automations, dict)
+                    assert "error" in automations
+                    assert "404" in automations["error"]
 
     @pytest.mark.asyncio
     async def test_get_entity_history(self, mock_config):

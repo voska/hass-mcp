@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release"
+        required: true
+        type: string
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  create-release:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version format
+        run: |
+          echo "${{ github.event.inputs.version }}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "Invalid version format. Use vX.Y.Z (e.g., v1.2.3)."
+            exit 1
+          }
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Create and push Git tag
+        run: |
+          git tag ${{ github.event.inputs.version }}
+          git push origin ${{ github.event.inputs.version }}
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.event.inputs.version }} \
+            --title "${{ github.event.inputs.version }}" \
+            --generate-notes \
+            --draft=false
+
+      - name: Trigger PyPI Publish
+        run: |
+          echo "PyPI publish will be triggered by the release event"
+
+      - name: Trigger Docker Build
+        run: |
+          echo "Docker build will be triggered by the tag push"
