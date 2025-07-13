@@ -103,11 +103,8 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
    {
      "mcpServers": {
        "hass-mcp": {
-         "command": "sh",
-         "args": [
-           "-c",
-           "exec $(which uvx || echo uvx) --from git+https://github.com/voska/hass-mcp hass-mcp"
-         ],
+         "command": "uvx",
+         "args": ["hass-mcp"],
          "env": {
            "HA_URL": "http://homeassistant.local:8123",
            "HA_TOKEN": "YOUR_LONG_LIVED_TOKEN"
