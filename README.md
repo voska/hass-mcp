@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server for Home Assistant integration with Claude and other LLMs.
 
+<a href="https://glama.ai/mcp/servers/@voska/hass-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@voska/hass-mcp/badge" alt="Hass-MCP MCP server" />
+</a>
+
 ## Overview
 
 Hass-MCP enables AI assistants like Claude to interact directly with your Home Assistant instance, allowing them to:
