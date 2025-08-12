@@ -91,8 +91,12 @@ async def get_client() -> httpx.AsyncClient:
     """Get a persistent httpx client for Home Assistant API calls"""
     global _client
     if _client is None:
-        logger.debug("Creating new HTTP client")
-        _client = httpx.AsyncClient(timeout=10.0)
+        ca_bundle = os.getenv("REQUESTS_CA_BUNDLE") or os.getenv("SSL_CERT_FILE")
+        logger.debug("Creating new HTTP client with CA bundle: %s", ca_bundle or "default truststore")
+        _client = httpx.AsyncClient(
+            timeout=10.0,
+            verify=ca_bundle if ca_bundle else True,
+        )
     return _client
 
 async def cleanup_client() -> None:
