@@ -439,49 +439,107 @@ async def restart_home_assistant() -> Dict[str, Any]:
     return await call_service("homeassistant", "restart", {})
 
 @handle_api_errors
-async def get_hass_error_log() -> Dict[str, Any]:
+async def get_hass_error_log(
+    level: Optional[str] = None,
+    integration: Optional[str] = None,
+    search_term: Optional[str] = None,
+    lines: Optional[int] = None
+) -> Dict[str, Any]:
     """
-    Get the Home Assistant error log for troubleshooting
-    
+    Get the Home Assistant error log for troubleshooting with optional filtering
+
+    Args:
+        level: Filter by log level (ERROR, WARNING, INFO, DEBUG, etc.)
+        integration: Filter by integration name (e.g., 'mqtt', 'zwave')
+        search_term: Filter by keyword or phrase
+        lines: Limit number of lines returned (most recent lines)
+
     Returns:
         A dictionary containing:
-        - log_text: The full error log text
+        - log_text: The filtered log text
         - error_count: Number of ERROR entries found
         - warning_count: Number of WARNING entries found
         - integration_mentions: Map of integration names to mention counts
+        - total_lines: Total number of lines in filtered log
+        - filters_applied: Dictionary of filters that were applied
         - error: Error message if retrieval failed
     """
     try:
         # Call the Home Assistant API error_log endpoint
         url = f"{HA_URL}/api/error_log"
         headers = get_ha_headers()
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=30)
-            
+
             if response.status_code == 200:
                 log_text = response.text
-                
-                # Count errors and warnings
+
+                # Track which filters were applied
+                filters_applied = {}
+
+                # Apply filters
+                if level or integration or search_term:
+                    import re
+                    log_lines = log_text.split('\n')
+                    filtered_lines = []
+
+                    for line in log_lines:
+                        # Skip empty lines
+                        if not line.strip():
+                            continue
+
+                        # Apply level filter
+                        if level:
+                            filters_applied['level'] = level
+                            if level.upper() not in line:
+                                continue
+
+                        # Apply integration filter
+                        if integration:
+                            filters_applied['integration'] = integration
+                            # Look for [integration_name] pattern
+                            if f'[{integration.lower()}]' not in line.lower():
+                                continue
+
+                        # Apply search term filter
+                        if search_term:
+                            filters_applied['search_term'] = search_term
+                            if search_term.lower() not in line.lower():
+                                continue
+
+                        filtered_lines.append(line)
+
+                    log_text = '\n'.join(filtered_lines)
+
+                # Apply line limit (get last N lines)
+                if lines and lines > 0:
+                    filters_applied['lines'] = lines
+                    log_lines = log_text.split('\n')
+                    log_text = '\n'.join(log_lines[-lines:])
+
+                # Count errors and warnings in the filtered log
                 error_count = log_text.count("ERROR")
                 warning_count = log_text.count("WARNING")
-                
-                # Extract integration mentions
+
+                # Extract integration mentions from filtered log
                 import re
                 integration_mentions = {}
-                
+
                 # Look for patterns like [mqtt], [zwave], etc.
                 for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
-                    integration = match.group(1).lower()
-                    if integration not in integration_mentions:
-                        integration_mentions[integration] = 0
-                    integration_mentions[integration] += 1
-                
+                    integration_name = match.group(1).lower()
+                    if integration_name not in integration_mentions:
+                        integration_mentions[integration_name] = 0
+                    integration_mentions[integration_name] += 1
+
                 return {
                     "log_text": log_text,
                     "error_count": error_count,
                     "warning_count": warning_count,
-                    "integration_mentions": integration_mentions
+                    "integration_mentions": integration_mentions,
+                    "total_lines": len(log_text.split('\n')) if log_text else 0,
+                    "filters_applied": filters_applied if filters_applied else None
                 }
             else:
                 return {
@@ -490,7 +548,9 @@ async def get_hass_error_log() -> Dict[str, Any]:
                     "log_text": "",
                     "error_count": 0,
                     "warning_count": 0,
-                    "integration_mentions": {}
+                    "integration_mentions": {},
+                    "total_lines": 0,
+                    "filters_applied": None
                 }
     except Exception as e:
         logger.error(f"Error retrieving Home Assistant error log: {str(e)}")
@@ -499,7 +559,9 @@ async def get_hass_error_log() -> Dict[str, Any]:
             "log_text": "",
             "error_count": 0,
             "warning_count": 0,
-            "integration_mentions": {}
+            "integration_mentions": {},
+            "total_lines": 0,
+            "filters_applied": None
         }
 
 @handle_api_errors
