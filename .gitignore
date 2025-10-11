@@ -17,3 +17,9 @@ Thumbs.db
 
 # Testing
 .pytest_cache/
+
+# Claude
+.claude/settings.local.json
+
+# uv
+uv.lock
