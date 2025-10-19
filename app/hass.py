@@ -172,10 +172,14 @@ async def get_hass_version() -> str:
 async def get_entity_state(
     entity_id: str,
     fields: Optional[List[str]] = None,
-    lean: bool = False
+    lean: bool = False,
+    use_cache: bool = False  # Accept but ignore for now - TODO: implement caching
 ) -> Dict[str, Any]:
     """
     Get the state of a Home Assistant entity
+
+    TODO: Implement caching logic when use_cache=True
+    This would reduce API calls and improve performance for frequently accessed entities
     
     Args:
         entity_id: The entity ID to get
