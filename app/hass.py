@@ -506,6 +506,108 @@ async def get_hass_error_log() -> Dict[str, Any]:
             "integration_mentions": {}
         }
 
+def parse_datetime(dt_input: Union[str, datetime]) -> datetime:
+    """
+    Parse datetime input to timezone-aware datetime object.
+    Simple implementation supporting ISO 8601 and basic keywords.
+
+    Supported formats:
+    - ISO 8601: "2025-10-28T10:00:00Z", "2025-10-28T10:00:00+00:00"
+    - Date only: "2025-10-28" (assumes start of day in UTC)
+    - Keywords: "now", "today", "yesterday"
+
+    Returns:
+        datetime: Timezone-aware datetime in UTC
+    """
+    if isinstance(dt_input, datetime):
+        return dt_input if dt_input.tzinfo else dt_input.replace(tzinfo=timezone.utc)
+
+    dt_str = str(dt_input).strip()
+
+    # Handle special keywords
+    if dt_str.lower() == "now":
+        return datetime.now(timezone.utc)
+    if dt_str.lower() == "today":
+        return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    if dt_str.lower() == "yesterday":
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        return today - timedelta(days=1)
+
+    # Handle date-only format (YYYY-MM-DD)
+    if len(dt_str) == 10 and dt_str[4] == '-' and dt_str[7] == '-':
+        dt = datetime.strptime(dt_str, "%Y-%m-%d")
+        return dt.replace(tzinfo=timezone.utc)
+
+    # Handle ISO 8601
+    if dt_str.endswith('Z'):
+        dt_str = dt_str[:-1] + '+00:00'
+
+    try:
+        dt = datetime.fromisoformat(dt_str)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError(
+            f"Invalid datetime format: {dt_input}. "
+            f"Use ISO 8601 (e.g., '2025-10-28T10:00:00Z'), "
+            f"date only (e.g., '2025-10-28'), "
+            f"or keywords: 'now', 'today', 'yesterday'"
+        )
+
+@handle_api_errors
+async def get_entity_history_range(
+    entity_id: str,
+    start_time: Union[str, datetime],
+    end_time: Optional[Union[str, datetime]] = None,
+    minimal_response: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Get entity history for a specific date/time range.
+
+    Args:
+        entity_id: The entity ID to get history for
+        start_time: ISO 8601 string or datetime object
+        end_time: ISO 8601 string or datetime object (defaults to now)
+        minimal_response: Reduce response size (default: True)
+
+    Returns:
+        A list of state change objects, or an error dictionary
+    """
+    client = await get_client()
+
+    # Parse start_time
+    start_dt = parse_datetime(start_time)
+
+    # Parse end_time (default to now)
+    if end_time is None:
+        end_dt = datetime.now(timezone.utc)
+    else:
+        end_dt = parse_datetime(end_time)
+
+    # Validate time range
+    if start_dt >= end_dt:
+        raise ValueError(f"start_time must be before end_time")
+
+    # Format for API
+    start_time_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_time_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Construct the API URL
+    url = f"{HA_URL}/api/history/period/{start_time_iso}"
+
+    # Set query parameters
+    params = {
+        "filter_entity_id": entity_id,
+        "minimal_response": str(minimal_response).lower(),
+        "end_time": end_time_iso,
+    }
+
+    # Make the API call
+    response = await client.get(url, headers=get_ha_headers(), params=params)
+    response.raise_for_status()
+
+    # Return the JSON response
+    return response.json()
+
 @handle_api_errors
 async def get_entity_history(entity_id: str, hours: int) -> List[Dict[str, Any]]:
     """
@@ -518,32 +620,17 @@ async def get_entity_history(entity_id: str, hours: int) -> List[Dict[str, Any]]
     Returns:
         A list of state change objects, or an error dictionary.
     """
-    client = await get_client()
-    
-    # Calculate the end time for the history lookup
+    # Calculate time range
     end_time = datetime.now(timezone.utc)
-    end_time_iso = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # Calculate the start time for the history lookup based on end_time
     start_time = end_time - timedelta(hours=hours)
-    start_time_iso = start_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Construct the API URL
-    url = f"{HA_URL}/api/history/period/{start_time_iso}"
-    
-    # Set query parameters
-    params = {
-        "filter_entity_id": entity_id,
-        "minimal_response": "true",
-        "end_time": end_time_iso,
-    }
-    
-    # Make the API call
-    response = await client.get(url, headers=get_ha_headers(), params=params)
-    response.raise_for_status()
-    
-    # Return the JSON response
-    return response.json()
+    # Delegate to the range function
+    return await get_entity_history_range(
+        entity_id=entity_id,
+        start_time=start_time,
+        end_time=end_time,
+        minimal_response=True
+    )
 
 @handle_api_errors
 async def get_system_overview() -> Dict[str, Any]:

@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 from app.hass import (
     get_hass_version, get_entity_state, call_service, get_entities,
-    get_automations, restart_home_assistant, 
+    get_automations, restart_home_assistant,
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
-    get_hass_error_log, get_entity_history
+    get_hass_error_log, get_entity_history, get_entity_history_range
 )
 
 # Type variable for generic functions
@@ -1200,6 +1200,110 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
             "error": f"Error processing history: {str(e)}",
             "states": [],
             "count": 0
+        }
+
+@mcp.tool()
+@async_handler("get_history_range")
+async def get_history_range(
+    entity_id: str,
+    start_time: str,
+    end_time: Optional[str] = None,
+    minimal_response: bool = True
+) -> Dict[str, Any]:
+    """
+    Get entity history for a specific date/time range
+
+    Args:
+        entity_id: The entity ID to get history for
+        start_time: Start time (ISO 8601, date only, or 'yesterday'/'today')
+        end_time: End time (optional, defaults to 'now')
+        minimal_response: Reduce response size (default: true)
+
+    Returns:
+        A dictionary containing:
+        - entity_id: The entity ID requested
+        - states: List of state objects with timestamps
+        - count: Number of state changes found
+        - start_time: Requested start time
+        - end_time: Requested or defaulted end time
+        - first_changed: Timestamp of earliest state change
+        - last_changed: Timestamp of most recent state change
+
+    Examples:
+        entity_id="sensor.temperature", start_time="2025-10-28T00:00:00Z"
+        entity_id="light.living_room", start_time="yesterday", end_time="today"
+        entity_id="switch.pump", start_time="2025-10-27", end_time="2025-10-28"
+        entity_id="sensor.humidity", start_time="2025-10-01T10:00:00Z", end_time="now"
+    """
+    logger.info(f"Getting history range for entity: {entity_id}, start: {start_time}, end: {end_time}")
+
+    try:
+        # Get history using the new range function
+        history_data = await get_entity_history_range(entity_id, start_time, end_time, minimal_response)
+
+        # Check for errors from the API call
+        if isinstance(history_data, dict) and "error" in history_data:
+            return {
+                "entity_id": entity_id,
+                "error": history_data["error"],
+                "states": [],
+                "count": 0,
+                "start_time": start_time,
+                "end_time": end_time or "now"
+            }
+
+        # Process the result (same as get_history)
+        states = []
+        if history_data and isinstance(history_data, list):
+            for state_list in history_data:
+                states.extend(state_list)
+
+        if not states:
+            return {
+                "entity_id": entity_id,
+                "states": [],
+                "count": 0,
+                "start_time": start_time,
+                "end_time": end_time or "now",
+                "message": "No state changes found in the specified range"
+            }
+
+        # Sort states by last_changed timestamp
+        states.sort(key=lambda x: x.get("last_changed", ""))
+
+        # Extract first and last changed timestamps
+        first_changed = states[0].get("last_changed") if states else None
+        last_changed = states[-1].get("last_changed") if states else None
+
+        return {
+            "entity_id": entity_id,
+            "states": states,
+            "count": len(states),
+            "start_time": start_time,
+            "end_time": end_time or "now",
+            "first_changed": first_changed,
+            "last_changed": last_changed
+        }
+    except ValueError as e:
+        # Handle date parsing errors
+        logger.error(f"Date parsing error for {entity_id}: {str(e)}")
+        return {
+            "entity_id": entity_id,
+            "error": str(e),
+            "states": [],
+            "count": 0,
+            "start_time": start_time,
+            "end_time": end_time or "now"
+        }
+    except Exception as e:
+        logger.error(f"Error processing history range for {entity_id}: {str(e)}")
+        return {
+            "entity_id": entity_id,
+            "error": f"Error processing history: {str(e)}",
+            "states": [],
+            "count": 0,
+            "start_time": start_time,
+            "end_time": end_time or "now"
         }
 
 @mcp.tool()

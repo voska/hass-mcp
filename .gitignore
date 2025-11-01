@@ -17,3 +17,6 @@ Thumbs.db
 
 # Testing
 .pytest_cache/
+
+# Development documentation
+DEVELOPMENT.md
