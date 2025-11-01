@@ -1307,6 +1307,150 @@ async def get_history_range(
         }
 
 @mcp.tool()
+@async_handler("get_statistics")
+async def get_statistics(
+    entity_id: str,
+    hours: int = 24,
+    period: str = "hour"
+) -> Dict[str, Any]:
+    """
+    Get statistical data for an entity for recent time period
+
+    Args:
+        entity_id: The entity ID to get statistics for
+        hours: Number of hours of statistics to retrieve (default: 24)
+        period: Statistics period: "5minute", "hour", "day", "week", "month" (default: "hour")
+
+    Returns:
+        A dictionary containing:
+        - entity_id: The entity ID requested
+        - period: The period used
+        - statistics: List of statistical data points with mean, min, max values
+        - count: Number of statistical data points
+
+    Examples:
+        entity_id="sensor.temperature" - get 24h hourly statistics
+        entity_id="sensor.power_usage", hours=168, period="day" - get 7 days of daily stats
+        entity_id="sensor.humidity", hours=4, period="5minute" - get 4h of 5-minute stats
+
+    Best Practices:
+        - Use "5minute" period for recent data (< 10 days old)
+        - Use "hour" period for older data or long-term trends
+        - Token-efficient for large date ranges compared to raw states
+    """
+    logger.info(f"Getting statistics for entity: {entity_id}, hours: {hours}, period: {period}")
+
+    try:
+        from app.hass import get_entity_statistics
+
+        # Get statistics using the API function
+        stats_data = await get_entity_statistics(entity_id, hours, period)
+
+        # Check for errors from the API call
+        if isinstance(stats_data, dict) and "error" in stats_data:
+            return stats_data
+
+        # Extract statistics count
+        stats_list = stats_data.get("statistics", [])
+
+        return {
+            "entity_id": entity_id,
+            "period": period,
+            "hours_requested": hours,
+            "statistics": stats_list,
+            "count": len(stats_list)
+        }
+    except Exception as e:
+        logger.error(f"Error getting statistics for {entity_id}: {str(e)}")
+        return {
+            "entity_id": entity_id,
+            "error": f"Error retrieving statistics: {str(e)}",
+            "statistics": [],
+            "count": 0
+        }
+
+@mcp.tool()
+@async_handler("get_statistics_range")
+async def get_statistics_range(
+    entity_id: str,
+    start_time: str,
+    end_time: Optional[str] = None,
+    period: str = "hour"
+) -> Dict[str, Any]:
+    """
+    Get statistical data for an entity for a specific date/time range
+
+    Args:
+        entity_id: The entity ID to get statistics for
+        start_time: Start time (ISO 8601, date only, or 'yesterday'/'today')
+        end_time: End time (optional, defaults to 'now')
+        period: Statistics period: "5minute", "hour", "day", "week", "month" (default: "hour")
+
+    Returns:
+        A dictionary containing:
+        - entity_id: The entity ID requested
+        - period: The period used
+        - start_time: The actual start time used
+        - end_time: The actual end time used
+        - statistics: List of statistical data points with mean, min, max values
+        - count: Number of statistical data points
+
+    Examples:
+        entity_id="sensor.temperature", start_time="2024-10-23", period="hour"
+        entity_id="sensor.power", start_time="2024-01-01", end_time="2024-12-31", period="day"
+        entity_id="sensor.humidity", start_time="yesterday", period="5minute"
+
+    Best Practices:
+        - Use this for accessing historical data beyond 10 days
+        - More token-efficient than get_history_range for large datasets
+        - Returns aggregated values (mean, min, max) instead of raw states
+    """
+    logger.info(f"Getting statistics range for entity: {entity_id}, start: {start_time}, end: {end_time}, period: {period}")
+
+    try:
+        from app.hass import get_entity_statistics_range
+
+        # Get statistics using the API function
+        stats_data = await get_entity_statistics_range(entity_id, start_time, end_time, period)
+
+        # Check for errors from the API call
+        if isinstance(stats_data, dict) and "error" in stats_data:
+            return stats_data
+
+        # Extract statistics count
+        stats_list = stats_data.get("statistics", [])
+
+        return {
+            "entity_id": entity_id,
+            "period": period,
+            "start_time": stats_data.get("start_time", start_time),
+            "end_time": stats_data.get("end_time", end_time or "now"),
+            "statistics": stats_list,
+            "count": len(stats_list)
+        }
+    except ValueError as e:
+        # Handle date parsing errors
+        logger.error(f"Date parsing error for {entity_id}: {str(e)}")
+        return {
+            "entity_id": entity_id,
+            "error": str(e),
+            "statistics": [],
+            "count": 0,
+            "start_time": start_time,
+            "end_time": end_time or "now"
+        }
+    except Exception as e:
+        logger.error(f"Error getting statistics range for {entity_id}: {str(e)}")
+        return {
+            "entity_id": entity_id,
+            "error": f"Error retrieving statistics: {str(e)}",
+            "statistics": [],
+            "count": 0,
+            "start_time": start_time,
+            "end_time": end_time or "now"
+        }
+
+@mcp.tool()
 @async_handler("get_error_log")
 async def get_error_log() -> Dict[str, Any]:
     """

@@ -633,6 +633,153 @@ async def get_entity_history(entity_id: str, hours: int) -> List[Dict[str, Any]]
     )
 
 @handle_api_errors
+async def get_entity_statistics(
+    entity_id: str,
+    hours: int,
+    period: str = "5minute"
+) -> Dict[str, Any]:
+    """
+    Get statistical data for an entity for recent time period.
+
+    Args:
+        entity_id: The entity ID to get statistics for
+        hours: Number of hours of statistics to retrieve
+        period: Statistics period: "5minute" or "hour"
+
+    Returns:
+        A dictionary containing statistical data with aggregated values
+    """
+    # Calculate time range
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(hours=hours)
+
+    # Delegate to the range function
+    return await get_entity_statistics_range(
+        entity_id=entity_id,
+        start_time=start_time,
+        end_time=end_time,
+        period=period
+    )
+
+@handle_api_errors
+async def get_entity_statistics_range(
+    entity_id: str,
+    start_time: Union[str, datetime],
+    end_time: Optional[Union[str, datetime]] = None,
+    period: str = "hour"
+) -> Dict[str, Any]:
+    """
+    Get statistical data for an entity for a specific date/time range.
+
+    Args:
+        entity_id: The entity ID to get statistics for
+        start_time: ISO 8601 string or datetime object
+        end_time: ISO 8601 string or datetime object (defaults to now)
+        period: Statistics period: "5minute", "hour", "day", "week", or "month"
+
+    Returns:
+        A dictionary containing:
+        - entity_id: The entity ID requested
+        - period: The period requested
+        - start_time: The actual start time used
+        - end_time: The actual end time used
+        - statistics: List of statistical data points with mean, min, max values
+    """
+    client = await get_client()
+
+    # Parse start_time
+    start_dt = parse_datetime(start_time)
+
+    # Parse end_time (default to now)
+    if end_time is None:
+        end_dt = datetime.now(timezone.utc)
+    else:
+        end_dt = parse_datetime(end_time)
+
+    # Validate time range
+    if start_dt >= end_dt:
+        raise ValueError(f"start_time must be before end_time")
+
+    # Format for API
+    start_time_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_time_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Construct the API URL - using the statistics endpoint
+    url = f"{HA_URL}/api/history/period/{start_time_iso}"
+
+    # Map our period names to HA's expected values
+    period_map = {
+        "5minute": "5minute",
+        "hour": "hour",
+        "day": "day",
+        "week": "week",
+        "month": "month"
+    }
+
+    if period not in period_map:
+        raise ValueError(f"Invalid period: {period}. Must be one of: {list(period_map.keys())}")
+
+    # Set query parameters for statistics
+    params = {
+        "statistic_ids": entity_id,
+        "period": period_map[period],
+        "end_time": end_time_iso,
+    }
+
+    # Make the API call to statistics endpoint
+    # Note: HA's statistics API endpoint is different
+    stats_url = f"{HA_URL}/api/statistics/during_period"
+
+    # Prepare the request body for statistics
+    body = {
+        "statistic_ids": [entity_id],
+        "period": period_map[period],
+        "start_time": start_time_iso,
+        "end_time": end_time_iso,
+        "types": ["mean", "min", "max", "change", "sum"]
+    }
+
+    # Make the API call (POST request with JSON body)
+    response = await client.post(
+        stats_url,
+        headers=get_ha_headers(),
+        json=body
+    )
+
+    if response.status_code == 404:
+        # Statistics might not be available for this entity
+        # Try alternative endpoint or return informative error
+        return {
+            "entity_id": entity_id,
+            "period": period,
+            "start_time": start_time_iso,
+            "end_time": end_time_iso,
+            "statistics": [],
+            "error": f"No statistics available for entity {entity_id}. This entity may not support long-term statistics."
+        }
+
+    response.raise_for_status()
+    data = response.json()
+
+    # Format the response
+    result = {
+        "entity_id": entity_id,
+        "period": period,
+        "start_time": start_time_iso,
+        "end_time": end_time_iso,
+        "statistics": []
+    }
+
+    # Extract statistics from the response
+    if entity_id in data:
+        result["statistics"] = data[entity_id]
+    elif isinstance(data, list) and len(data) > 0:
+        # Sometimes HA returns statistics as a list
+        result["statistics"] = data
+
+    return result
+
+@handle_api_errors
 async def get_system_overview() -> Dict[str, Any]:
     """
     Get a comprehensive overview of the entire Home Assistant system
