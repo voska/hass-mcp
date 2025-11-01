@@ -4,6 +4,9 @@ import functools
 import inspect
 import logging
 from datetime import datetime, timedelta, timezone
+import json
+import asyncio
+import websockets
 
 from app.config import HA_URL, HA_TOKEN, get_ha_headers
 
@@ -102,6 +105,71 @@ async def cleanup_client() -> None:
         logger.debug("Closing HTTP client")
         await _client.aclose()
         _client = None
+
+async def call_websocket_api(message_type: str, **kwargs) -> Dict[str, Any]:
+    """
+    Call Home Assistant WebSocket API.
+
+    Args:
+        message_type: The WebSocket message type (e.g., 'recorder/statistics_during_period')
+        **kwargs: Additional parameters for the message
+
+    Returns:
+        The response from Home Assistant
+    """
+    # Convert HTTP URL to WebSocket URL
+    ws_url = HA_URL.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = f"{ws_url}/api/websocket"
+
+    try:
+        async with websockets.connect(ws_url) as websocket:
+            # Wait for auth required message
+            auth_msg = await websocket.recv()
+            auth_data = json.loads(auth_msg)
+
+            if auth_data.get("type") == "auth_required":
+                # Send authentication
+                await websocket.send(json.dumps({
+                    "type": "auth",
+                    "access_token": HA_TOKEN
+                }))
+
+                # Wait for auth result
+                auth_result = await websocket.recv()
+                auth_result_data = json.loads(auth_result)
+
+                if auth_result_data.get("type") != "auth_ok":
+                    raise Exception(f"Authentication failed: {auth_result_data}")
+
+                # Now send the actual request
+                message_id = 1
+                message = {
+                    "id": message_id,
+                    "type": message_type,
+                    **kwargs
+                }
+
+                await websocket.send(json.dumps(message))
+
+                # Wait for response
+                response = await websocket.recv()
+                response_data = json.loads(response)
+
+                # Check for success
+                if response_data.get("success") is False:
+                    error = response_data.get("error", {})
+                    raise Exception(f"WebSocket API error: {error.get('message', 'Unknown error')}")
+
+                return response_data.get("result", {})
+            else:
+                raise Exception(f"Unexpected auth message: {auth_data}")
+
+    except websockets.exceptions.WebSocketException as e:
+        logger.error(f"WebSocket connection error: {str(e)}")
+        raise Exception(f"WebSocket connection failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"WebSocket API error: {str(e)}")
+        raise
 
 # Direct entity retrieval function
 async def get_all_entity_states() -> Dict[str, Dict[str, Any]]:
@@ -685,8 +753,6 @@ async def get_entity_statistics_range(
         - end_time: The actual end time used
         - statistics: List of statistical data points with mean, min, max values
     """
-    client = await get_client()
-
     # Parse start_time
     start_dt = parse_datetime(start_time)
 
@@ -704,9 +770,6 @@ async def get_entity_statistics_range(
     start_time_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     end_time_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Construct the API URL - using the statistics endpoint
-    url = f"{HA_URL}/api/history/period/{start_time_iso}"
-
     # Map our period names to HA's expected values
     period_map = {
         "5minute": "5minute",
@@ -719,65 +782,45 @@ async def get_entity_statistics_range(
     if period not in period_map:
         raise ValueError(f"Invalid period: {period}. Must be one of: {list(period_map.keys())}")
 
-    # Set query parameters for statistics
-    params = {
-        "statistic_ids": entity_id,
-        "period": period_map[period],
-        "end_time": end_time_iso,
-    }
+    try:
+        # Use WebSocket API to get statistics
+        result = await call_websocket_api(
+            "recorder/statistics_during_period",
+            start_time=start_time_iso,
+            end_time=end_time_iso,
+            statistic_ids=[entity_id],
+            period=period_map[period],
+            types=["mean", "min", "max", "state", "sum"]
+        )
 
-    # Make the API call to statistics endpoint
-    # Note: HA's statistics API endpoint is different
-    stats_url = f"{HA_URL}/api/statistics/during_period"
+        # Extract statistics from the response
+        statistics = []
+        if entity_id in result:
+            statistics = result[entity_id]
+        elif isinstance(result, dict) and len(result) > 0:
+            # Sometimes returns with different key format
+            first_key = list(result.keys())[0]
+            statistics = result[first_key]
 
-    # Prepare the request body for statistics
-    body = {
-        "statistic_ids": [entity_id],
-        "period": period_map[period],
-        "start_time": start_time_iso,
-        "end_time": end_time_iso,
-        "types": ["mean", "min", "max", "change", "sum"]
-    }
+        return {
+            "entity_id": entity_id,
+            "period": period,
+            "start_time": start_time_iso,
+            "end_time": end_time_iso,
+            "statistics": statistics
+        }
 
-    # Make the API call (POST request with JSON body)
-    response = await client.post(
-        stats_url,
-        headers=get_ha_headers(),
-        json=body
-    )
-
-    if response.status_code == 404:
-        # Statistics might not be available for this entity
-        # Try alternative endpoint or return informative error
+    except Exception as e:
+        logger.error(f"Error getting statistics for {entity_id}: {str(e)}")
+        # Return empty statistics with error message
         return {
             "entity_id": entity_id,
             "period": period,
             "start_time": start_time_iso,
             "end_time": end_time_iso,
             "statistics": [],
-            "error": f"No statistics available for entity {entity_id}. This entity may not support long-term statistics."
+            "error": f"Failed to retrieve statistics: {str(e)}"
         }
-
-    response.raise_for_status()
-    data = response.json()
-
-    # Format the response
-    result = {
-        "entity_id": entity_id,
-        "period": period,
-        "start_time": start_time_iso,
-        "end_time": end_time_iso,
-        "statistics": []
-    }
-
-    # Extract statistics from the response
-    if entity_id in data:
-        result["statistics"] = data[entity_id]
-    elif isinstance(data, list) and len(data) > 0:
-        # Sometimes HA returns statistics as a list
-        result["statistics"] = data
-
-    return result
 
 @handle_api_errors
 async def get_system_overview() -> Dict[str, Any]:
