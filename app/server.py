@@ -1125,12 +1125,28 @@ You'll help the user create optimized dashboards by:
 @async_handler("get_history")
 async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     """
-    Get the history of an entity's state changes
-    
+    Get RAW state changes for an entity (every single state change)
+
+    ⚠️ TOKEN LIMIT WARNING:
+    - Returns EVERY state change in the period
+    - Response size depends on sensor update frequency × time range
+    - Maximum response: 25,000 tokens
+    - Consider using get_statistics for aggregated data instead
+
+    When to use this tool:
+    - You need exact timestamps of state changes
+    - Entity changes infrequently (e.g., doors, switches)
+    - Short time periods relative to the sensor's update frequency
+
+    When NOT to use this tool:
+    - You only need trends or aggregated values → use get_statistics
+    - Long time periods for frequently-updating sensors
+    - Response might exceed token limits → use get_statistics
+
     Args:
         entity_id: The entity ID to get history for
         hours: Number of hours of history to retrieve (default: 24)
-    
+
     Returns:
         A dictionary containing:
         - entity_id: The entity ID requested
@@ -1138,14 +1154,13 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
         - count: Number of state changes found
         - first_changed: Timestamp of earliest state change
         - last_changed: Timestamp of most recent state change
-        
+
     Examples:
-        entity_id="light.living_room" - get 24h history
-        entity_id="sensor.temperature", hours=168 - get 7 day history
-    Best Practices:
-        - Keep hours reasonable (24-72) for token efficiency
-        - Use for entities with discrete state changes rather than continuously changing sensors
-        - Consider the state distribution rather than every individual state    
+        entity_id="binary_sensor.front_door" - door open/close events
+        entity_id="sensor.temperature", hours=1 - one hour of temperature readings
+
+    Note: If this tool returns a token limit error, reduce the hours parameter
+    or switch to get_statistics for aggregated data.
     """
     logger.info(f"Getting history for entity: {entity_id}, hours: {hours}")
     
@@ -1211,7 +1226,23 @@ async def get_history_range(
     minimal_response: bool = True
 ) -> Dict[str, Any]:
     """
-    Get entity history for a specific date/time range
+    Get RAW state changes for a specific date/time range
+
+    ⚠️ TOKEN LIMIT WARNING:
+    - Returns EVERY state change in the period
+    - Response size = sensor update frequency × time range
+    - Maximum response: 25,000 tokens
+    - High risk of exceeding limits with date ranges
+
+    When to use this tool:
+    - You need exact timestamps of specific state changes
+    - Short, precise time windows
+    - Entities with infrequent state changes
+
+    When NOT to use this tool:
+    - Date ranges spanning days → use get_statistics_range
+    - Frequently-updating sensors → use get_statistics_range
+    - You only need aggregated values → use get_statistics_range
 
     Args:
         entity_id: The entity ID to get history for
@@ -1230,10 +1261,11 @@ async def get_history_range(
         - last_changed: Timestamp of most recent state change
 
     Examples:
-        entity_id="sensor.temperature", start_time="2025-10-28T00:00:00Z"
+        entity_id="sensor.temperature", start_time="2025-10-28T10:00:00Z", end_time="2025-10-28T11:00:00Z"
         entity_id="light.living_room", start_time="yesterday", end_time="today"
-        entity_id="switch.pump", start_time="2025-10-27", end_time="2025-10-28"
-        entity_id="sensor.humidity", start_time="2025-10-01T10:00:00Z", end_time="now"
+
+    Note: If you receive a token limit error, use get_statistics_range instead
+    for the same time period to get aggregated data.
     """
     logger.info(f"Getting history range for entity: {entity_id}, start: {start_time}, end: {end_time}")
 
@@ -1314,7 +1346,25 @@ async def get_statistics(
     period: str = "hour"
 ) -> Dict[str, Any]:
     """
-    Get statistical data for an entity for recent time period
+    Get AGGREGATED statistics for an entity (mean, min, max values)
+
+    ✅ TOKEN EFFICIENT - Returns aggregated data instead of raw states
+    - Uses Home Assistant's pre-calculated statistics via WebSocket
+    - Much smaller response size than raw history
+    - Perfect for trends, graphs, and analysis
+
+    When to use this tool:
+    - You need trends or patterns over time
+    - Large time ranges (days, weeks, months)
+    - Frequently-updating sensors
+    - You don't need exact state change timestamps
+
+    Aggregation Periods:
+    - "5minute": Most detailed, ~12 points per hour
+    - "hour": Good for daily views, 24 points per day
+    - "day": For monthly views
+    - "week": For quarterly views
+    - "month": For yearly views
 
     Args:
         entity_id: The entity ID to get statistics for
@@ -1325,18 +1375,19 @@ async def get_statistics(
         A dictionary containing:
         - entity_id: The entity ID requested
         - period: The period used
-        - statistics: List of statistical data points with mean, min, max values
+        - statistics: List of data points, each with:
+          * start: Timestamp (milliseconds)
+          * end: Timestamp (milliseconds)
+          * mean: Average value in period
+          * min: Minimum value in period
+          * max: Maximum value in period
         - count: Number of statistical data points
 
     Examples:
-        entity_id="sensor.temperature" - get 24h hourly statistics
-        entity_id="sensor.power_usage", hours=168, period="day" - get 7 days of daily stats
-        entity_id="sensor.humidity", hours=4, period="5minute" - get 4h of 5-minute stats
+        entity_id="sensor.temperature", hours=24, period="hour" - hourly averages for 24h
+        entity_id="sensor.power_usage", hours=168, period="day" - daily averages for 7 days
 
-    Best Practices:
-        - Use "5minute" period for recent data (< 10 days old)
-        - Use "hour" period for older data or long-term trends
-        - Token-efficient for large date ranges compared to raw states
+    Note: Returns empty statistics if entity doesn't support long-term statistics
     """
     logger.info(f"Getting statistics for entity: {entity_id}, hours: {hours}, period: {period}")
 
@@ -1378,7 +1429,25 @@ async def get_statistics_range(
     period: str = "hour"
 ) -> Dict[str, Any]:
     """
-    Get statistical data for an entity for a specific date/time range
+    Get AGGREGATED statistics for a specific date/time range
+
+    ✅ BEST TOOL FOR HISTORICAL DATA - No token limits!
+    - Retrieves Home Assistant's long-term statistics via WebSocket
+    - Can handle ANY date range efficiently (days, months, years)
+    - Returns aggregated data (mean/min/max) instead of raw states
+
+    When to use this tool:
+    - ANY date range query (especially multi-day)
+    - Historical data analysis
+    - Frequently-updating sensors over long periods
+    - When raw history exceeds token limits
+
+    Aggregation Periods:
+    - "5minute": For detailed recent data (last 10 days)
+    - "hour": Best for daily/weekly ranges
+    - "day": Best for monthly ranges
+    - "week": Best for quarterly ranges
+    - "month": Best for yearly ranges
 
     Args:
         entity_id: The entity ID to get statistics for
@@ -1392,18 +1461,21 @@ async def get_statistics_range(
         - period: The period used
         - start_time: The actual start time used
         - end_time: The actual end time used
-        - statistics: List of statistical data points with mean, min, max values
+        - statistics: List of data points, each with:
+          * start: Timestamp (milliseconds)
+          * end: Timestamp (milliseconds)
+          * mean: Average value in period
+          * min: Minimum value in period
+          * max: Maximum value in period
         - count: Number of statistical data points
 
     Examples:
-        entity_id="sensor.temperature", start_time="2024-10-23", period="hour"
-        entity_id="sensor.power", start_time="2024-01-01", end_time="2024-12-31", period="day"
+        entity_id="sensor.temperature", start_time="2024-10-01", end_time="2024-10-31", period="day"
+        entity_id="sensor.power", start_time="2024-01-01", end_time="2024-12-31", period="month"
         entity_id="sensor.humidity", start_time="yesterday", period="5minute"
 
-    Best Practices:
-        - Use this for accessing historical data beyond 10 days
-        - More token-efficient than get_history_range for large datasets
-        - Returns aggregated values (mean, min, max) instead of raw states
+    Pro Tip: If get_history_range returns a token error, use this tool with
+    the same date range to get the aggregated data instead.
     """
     logger.info(f"Getting statistics range for entity: {entity_id}, start: {start_time}, end: {end_time}, period: {period}")
 
