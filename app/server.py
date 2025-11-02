@@ -1127,7 +1127,7 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     """
     Get RAW state changes for an entity (every single state change)
 
-    ⚠️ TOKEN LIMIT WARNING:
+    TOKEN LIMIT WARNING:
     - Returns EVERY state change in the period
     - Response size depends on sensor update frequency × time range
     - May exceed token limits for some LLM clients
@@ -1228,7 +1228,7 @@ async def get_history_range(
     """
     Get RAW state changes for a specific date/time range
 
-    ⚠️ TOKEN LIMIT WARNING:
+    TOKEN LIMIT WARNING:
     - Returns EVERY state change in the period
     - Response size = sensor update frequency × time range
     - May exceed token limits for some LLM clients
@@ -1348,7 +1348,7 @@ async def get_statistics(
     """
     Get AGGREGATED statistics for an entity (mean, min, max values)
 
-    ✅ TOKEN EFFICIENT - Returns aggregated data instead of raw states
+    TOKEN EFFICIENT - Returns aggregated data instead of raw states
     - Uses Home Assistant's pre-calculated statistics via WebSocket
     - Much smaller response size than raw history
     - Perfect for trends, graphs, and analysis
@@ -1431,7 +1431,7 @@ async def get_statistics_range(
     """
     Get AGGREGATED statistics for a specific date/time range
 
-    ✅ BEST TOOL FOR HISTORICAL DATA - No token limits!
+    BEST TOOL FOR HISTORICAL DATA - No token limits!
     - Retrieves Home Assistant's long-term statistics via WebSocket
     - Can handle ANY date range efficiently (days, months, years)
     - Returns aggregated data (mean/min/max) instead of raw states
