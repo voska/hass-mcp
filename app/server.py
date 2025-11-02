@@ -1130,7 +1130,7 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     ⚠️ TOKEN LIMIT WARNING:
     - Returns EVERY state change in the period
     - Response size depends on sensor update frequency × time range
-    - Maximum response: 25,000 tokens
+    - May exceed token limits for some LLM clients
     - Consider using get_statistics for aggregated data instead
 
     When to use this tool:
@@ -1231,7 +1231,7 @@ async def get_history_range(
     ⚠️ TOKEN LIMIT WARNING:
     - Returns EVERY state change in the period
     - Response size = sensor update frequency × time range
-    - Maximum response: 25,000 tokens
+    - May exceed token limits for some LLM clients
     - High risk of exceeding limits with date ranges
 
     When to use this tool:
