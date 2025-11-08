@@ -1526,23 +1526,24 @@ async def get_statistics_range(
 @async_handler("get_error_log")
 async def get_error_log() -> Dict[str, Any]:
     """
-    Get the Home Assistant error log for troubleshooting
-    
+    Get the Home Assistant error log for troubleshooting using WebSocket API
+
     Returns:
         A dictionary containing:
-        - log_text: The full error log text
+        - records: List of error/warning log records (each with timestamp, level, name, message)
         - error_count: Number of ERROR entries found
         - warning_count: Number of WARNING entries found
         - integration_mentions: Map of integration names to mention counts
         - error: Error message if retrieval failed
-        
+
     Examples:
-        Returns errors, warnings count and integration mentions
+        Returns structured log records with errors and warnings count
     Best Practices:
         - Use this tool when troubleshooting specific Home Assistant errors
         - Look for patterns in repeated errors
         - Pay attention to timestamps to correlate errors with events
-        - Focus on integrations with many mentions in the log    
+        - Focus on integrations with many mentions in the log
+        - Note: Only returns the 50 most recent errors/warnings (Home Assistant default)
     """
     logger.info("Getting Home Assistant error log")
     return await get_hass_error_log()

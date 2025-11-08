@@ -513,62 +513,54 @@ async def restart_home_assistant() -> Dict[str, Any]:
 @handle_api_errors
 async def get_hass_error_log() -> Dict[str, Any]:
     """
-    Get the Home Assistant error log for troubleshooting
-    
+    Get the Home Assistant error log for troubleshooting using WebSocket API
+
     Returns:
         A dictionary containing:
-        - log_text: The full error log text
+        - records: List of error/warning log records
         - error_count: Number of ERROR entries found
         - warning_count: Number of WARNING entries found
         - integration_mentions: Map of integration names to mention counts
         - error: Error message if retrieval failed
     """
     try:
-        # Call the Home Assistant API error_log endpoint
-        url = f"{HA_URL}/api/error_log"
-        headers = get_ha_headers()
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                log_text = response.text
-                
-                # Count errors and warnings
-                error_count = log_text.count("ERROR")
-                warning_count = log_text.count("WARNING")
-                
-                # Extract integration mentions
-                import re
-                integration_mentions = {}
-                
-                # Look for patterns like [mqtt], [zwave], etc.
-                for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
-                    integration = match.group(1).lower()
-                    if integration not in integration_mentions:
-                        integration_mentions[integration] = 0
-                    integration_mentions[integration] += 1
-                
-                return {
-                    "log_text": log_text,
-                    "error_count": error_count,
-                    "warning_count": warning_count,
-                    "integration_mentions": integration_mentions
-                }
-            else:
-                return {
-                    "error": f"Error retrieving error log: {response.status_code} {response.reason_phrase}",
-                    "details": response.text,
-                    "log_text": "",
-                    "error_count": 0,
-                    "warning_count": 0,
-                    "integration_mentions": {}
-                }
+        # Use WebSocket API to retrieve system_log records
+        # call_websocket_api returns result["result"] directly
+        records = await call_websocket_api("system_log/list")
+
+        if not records or not isinstance(records, list):
+            return {
+                "error": "Failed to retrieve system log records",
+                "records": [],
+                "error_count": 0,
+                "warning_count": 0,
+                "integration_mentions": {}
+            }
+
+        # Count errors and warnings
+        error_count = sum(1 for r in records if r.get("level") == "ERROR")
+        warning_count = sum(1 for r in records if r.get("level") == "WARNING")
+
+        # Extract integration mentions from logger names
+        integration_mentions = {}
+        for record in records:
+            logger_name = record.get("name", "")
+            # Extract integration name from logger like "homeassistant.components.mqtt"
+            if "homeassistant.components." in logger_name:
+                integration = logger_name.split("homeassistant.components.")[1].split(".")[0]
+                integration_mentions[integration] = integration_mentions.get(integration, 0) + 1
+
+        return {
+            "records": records,
+            "error_count": error_count,
+            "warning_count": warning_count,
+            "integration_mentions": integration_mentions
+        }
     except Exception as e:
         logger.error(f"Error retrieving Home Assistant error log: {str(e)}")
         return {
             "error": f"Error retrieving error log: {str(e)}",
-            "log_text": "",
+            "records": [],
             "error_count": 0,
             "warning_count": 0,
             "integration_mentions": {}
