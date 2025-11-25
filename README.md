@@ -156,6 +156,26 @@ claude mcp add hass-mcp -e HA_URL=http://homeassistant.local:8123 -e HA_TOKEN=YO
 
 Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant token and update the HA_URL to match your Home Assistant instance address.
 
+## HTTP Transport (Streamable)
+
+Hass-MCP supports streamable HTTP transport for web-based integrations or when stdio transport is not suitable.
+
+### Running with HTTP Transport
+
+**Using uvx:**
+
+```bash
+HA_URL=http://homeassistant.local:8123 HA_TOKEN=YOUR_LONG_LIVED_TOKEN uvx hass-mcp --http --port 8000
+```
+
+**Using Docker:**
+
+```bash
+docker run -p 8000:8000 -e HA_URL=http://homeassistant.local:8123 -e HA_TOKEN=YOUR_LONG_LIVED_TOKEN voska/hass-mcp --http --port 8000
+```
+
+The server will be available at `http://localhost:8000` for HTTP connections.
+
 ## Usage Examples
 
 Here are some examples of prompts you can use with Claude once Hass-MCP is set up:

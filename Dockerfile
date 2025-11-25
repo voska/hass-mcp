@@ -10,6 +10,8 @@ COPY . .
 # Set environment for MCP communication
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+ENV MCP_HOST=0.0.0.0
+
 
 # Install package with UV (using --system flag)
 RUN uv pip install --system -e .

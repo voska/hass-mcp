@@ -28,7 +28,13 @@ T = TypeVar('T')
 from mcp.server.fastmcp import FastMCP, Context, Image
 from mcp.server.stdio import stdio_server
 import mcp.types as types
-mcp = FastMCP("Hass-MCP")
+import os
+
+mcp = FastMCP(
+    "Hass-MCP",
+    host=os.environ.get("MCP_HOST", "127.0.0.1"),
+    port=int(os.environ.get("MCP_PORT", "8000"))
+)
 
 def async_handler(command_type: str):
     """
