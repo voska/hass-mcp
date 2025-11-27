@@ -34,3 +34,8 @@ CHANGELOG.md
 .idea/
 *.swp
 *.swo
+
+# Ignore CI/CD and lock files
+.github/
+uv.lock
+.pytest_cache/
