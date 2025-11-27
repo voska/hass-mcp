@@ -18,7 +18,8 @@ from app.hass import (
     get_hass_version, get_entity_state, call_service, get_entities,
     get_automations, restart_home_assistant,
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
-    get_hass_error_log, get_entity_history, get_entity_history_range
+    get_hass_error_log, get_entity_history, get_entity_history_range,
+    list_automation_traces, get_automation_trace
 )
 
 # Type variable for generic functions
@@ -861,7 +862,85 @@ async def list_automations() -> List[Dict[str, Any]]:
         logger.error(f"Error in list_automations: {str(e)}")
         return []
 
-# We already have a list_automations tool, so no need to duplicate functionality
+
+@mcp.tool()
+@async_handler("list_automation_traces")
+async def list_automation_traces_tool(
+    automation_id: str,
+    domain: str = "automation",
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    List recent execution traces for a specific automation
+
+    Args:
+        automation_id: REQUIRED - The automation ID (e.g., 'motion_light' or 'automation.motion_light')
+        domain: Domain to query ('automation' or 'script'). Default: 'automation'
+        limit: Maximum traces to return (default: 10, max: 50)
+
+    Returns:
+        Dictionary with:
+        - traces: List of lean summaries (run_id, timestamp, trigger, state, outcome)
+        - automation_id: The automation queried
+        - domain: The domain queried
+        - count: Number of traces returned
+
+    Examples:
+        automation_id="motion_light" - get last 10 traces
+        automation_id="kitchen_lights", limit=5 - get last 5 traces
+
+    Best Practices:
+        - Use run_id with get_automation_trace to get full details
+        - Check 'outcome' field: 'finished', 'failed_conditions', 'aborted'
+        - 'state: running' means automation still executing
+    """
+    logger.info(f"Listing traces for automation: {automation_id}, limit: {limit}")
+    return await list_automation_traces(automation_id, domain, limit)
+
+
+@mcp.tool()
+@async_handler("get_automation_trace")
+async def get_automation_trace_tool(
+    automation_id: str,
+    run_id: str,
+    domain: str = "automation"
+) -> Dict[str, Any]:
+    """
+    Get detailed trace for a specific automation run
+
+    Retrieves complete execution details including trigger info, condition
+    evaluation results, action execution steps, variables, and any errors.
+
+    Args:
+        automation_id: The automation ID (e.g., 'motion_light' or 'automation.motion_light')
+        run_id: The specific run/trace ID from list_automation_traces
+        domain: Domain ('automation' or 'script'). Default: 'automation'
+
+    Returns:
+        Dictionary with:
+        - trace: Complete trace data including:
+          * trigger: What triggered the automation
+          * condition: Condition evaluation results (if any)
+          * action: Step-by-step action execution
+          * variables: Variables at each step
+          * error: Error details if the run failed
+        - automation_id: The automation queried
+        - run_id: The run ID queried
+        - domain: The domain
+
+    Examples:
+        automation_id="motion_light", run_id="1700000000.123456"
+        automation_id="automation.bedtime_routine", run_id="1700000000.789"
+
+    Best Practices:
+        - First use list_automation_traces to find the run_id
+        - Check 'trace.trace' for step-by-step execution path
+        - Look for 'result' fields to see what each step returned
+        - Examine 'error' fields for failure details
+    """
+    logger.info(f"Getting trace for automation: {automation_id}, run_id: {run_id}")
+    return await get_automation_trace(automation_id, run_id, domain)
+
 
 @mcp.tool()
 @async_handler("restart_ha")

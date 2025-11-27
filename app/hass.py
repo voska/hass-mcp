@@ -566,6 +566,148 @@ async def get_hass_error_log() -> Dict[str, Any]:
             "integration_mentions": {}
         }
 
+
+@handle_api_errors
+async def list_automation_traces(
+    automation_id: str,
+    domain: str = "automation",
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    List recent execution traces for a specific automation.
+
+    Token-efficient: Returns only essential fields, limited results.
+
+    Args:
+        automation_id: REQUIRED - The automation ID (e.g., 'motion_light' or 'automation.motion_light')
+        domain: Domain to query ('automation' or 'script'). Default: 'automation'
+        limit: Maximum traces to return (default: 10, max: 50)
+
+    Returns:
+        A dictionary containing:
+        - traces: List of lean summaries (run_id, timestamp, trigger, state, outcome)
+        - automation_id: The automation queried
+        - domain: The domain queried
+        - count: Number of traces returned
+    """
+    try:
+        # Enforce limit bounds
+        limit = min(max(1, limit), 50)
+
+        # Strip domain prefix if present
+        if automation_id.startswith(f"{domain}."):
+            automation_id = automation_id.split(".", 1)[1]
+
+        # Call trace/list WebSocket API with specific item_id
+        traces = await call_websocket_api(
+            "trace/list",
+            domain=domain,
+            item_id=automation_id
+        )
+
+        if not traces:
+            return {
+                "automation_id": automation_id,
+                "domain": domain,
+                "traces": [],
+                "count": 0
+            }
+
+        # Extract traces for this automation
+        raw_traces = []
+        if isinstance(traces, dict) and automation_id in traces:
+            raw_traces = traces[automation_id]
+        elif isinstance(traces, list):
+            raw_traces = traces
+
+        # Build lean trace summaries - only essential fields
+        lean_traces = []
+        for trace in raw_traces[:limit]:
+            lean_trace = {
+                "run_id": trace.get("run_id"),
+                "timestamp": trace.get("timestamp", {}).get("start"),
+                "trigger": trace.get("trigger"),
+                "state": trace.get("state"),
+            }
+            # Include outcome if present
+            if trace.get("script_execution"):
+                lean_trace["outcome"] = trace["script_execution"]
+            lean_traces.append(lean_trace)
+
+        return {
+            "automation_id": automation_id,
+            "domain": domain,
+            "traces": lean_traces,
+            "count": len(lean_traces)
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing automation traces: {str(e)}")
+        return {
+            "automation_id": automation_id,
+            "domain": domain,
+            "traces": [],
+            "count": 0,
+            "error": f"Error listing traces: {str(e)}"
+        }
+
+
+@handle_api_errors
+async def get_automation_trace(
+    automation_id: str,
+    run_id: str,
+    domain: str = "automation"
+) -> Dict[str, Any]:
+    """
+    Get detailed trace information for a specific automation run.
+
+    Uses the WebSocket API to retrieve full execution details including
+    trigger info, condition results, action execution, and any errors.
+
+    Args:
+        automation_id: The automation ID (e.g., 'motion_light' or 'automation.motion_light')
+        run_id: The specific run/trace ID to retrieve
+        domain: The domain ('automation' or 'script'). Default: 'automation'
+
+    Returns:
+        A dictionary containing the full trace with:
+        - trace: Complete trace data including trigger, conditions, actions
+        - automation_id: The automation ID
+        - run_id: The run ID
+        - domain: The domain
+        - error: Error message if retrieval failed
+    """
+    try:
+        # Strip domain prefix if present
+        if automation_id.startswith(f"{domain}."):
+            automation_id = automation_id.split(".", 1)[1]
+
+        # Call trace/get WebSocket API
+        trace = await call_websocket_api(
+            "trace/get",
+            domain=domain,
+            item_id=automation_id,
+            run_id=run_id
+        )
+
+        return {
+            "automation_id": automation_id,
+            "run_id": run_id,
+            "domain": domain,
+            "trace": trace
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting automation trace: {str(e)}")
+        return {
+            "automation_id": automation_id,
+            "run_id": run_id,
+            "domain": domain,
+            "trace": None,
+            "error": f"Error getting trace: {str(e)}"
+        }
+
+
 def parse_datetime(dt_input: Union[str, datetime]) -> datetime:
     """
     Parse datetime input to timezone-aware datetime object.
