@@ -254,9 +254,30 @@ async def call_websocket_api(message_type: str, **kwargs) -> Dict[str, Any]:
             else:
                 raise Exception(f"Unexpected auth message: {auth_data}")
 
+    except ssl.SSLError as e:
+        logger.error(f"SSL/TLS error connecting to Home Assistant: {str(e)}")
+        raise Exception(f"SSL certificate error: {str(e)}")
+    except websockets.exceptions.InvalidURI as e:
+        logger.error(f"Invalid WebSocket URI: {ws_url}")
+        raise Exception(f"Invalid WebSocket URI: {str(e)}")
+    except websockets.exceptions.ConnectionClosed as e:
+        logger.error(f"WebSocket connection closed unexpectedly: {e.code} - {e.reason}")
+        raise Exception(f"WebSocket connection closed: {e.reason or 'Unknown reason'}")
     except websockets.exceptions.WebSocketException as e:
         logger.error(f"WebSocket connection error: {str(e)}")
         raise Exception(f"WebSocket connection failed: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse WebSocket response: {str(e)}")
+        raise Exception(f"Invalid response from Home Assistant: {str(e)}")
+    except asyncio.TimeoutError:
+        logger.error(f"WebSocket connection to {ws_url} timed out")
+        raise Exception(f"WebSocket connection timed out")
+    except ConnectionRefusedError:
+        logger.error(f"Connection refused to {ws_url}")
+        raise Exception(f"Connection refused: Home Assistant not reachable at {HA_URL}")
+    except OSError as e:
+        logger.error(f"Network error connecting to {ws_url}: {str(e)}")
+        raise Exception(f"Network error: {str(e)}")
     except Exception as e:
         logger.error(f"WebSocket API error: {str(e)}")
         raise
