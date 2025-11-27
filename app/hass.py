@@ -125,6 +125,53 @@ _timeout_config = httpx.Timeout(
     pool=5.0        # Pool timeout - waiting for available connection
 )
 
+
+class RateLimiter:
+    """
+    Simple async rate limiter using token bucket algorithm.
+    Limits requests to max_rate per second.
+    """
+
+    def __init__(self, max_rate: float = 10.0):
+        """
+        Initialize rate limiter.
+
+        Args:
+            max_rate: Maximum requests per second (default: 10)
+        """
+        self.max_rate = max_rate
+        self.tokens = max_rate
+        self.last_update: float = 0.0  # Will be set on first acquire()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        """Wait until a request token is available."""
+        async with self._lock:
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+
+            # On first call, just set last_update and use existing tokens
+            if self.last_update == 0.0:
+                self.last_update = now
+            else:
+                # Refill tokens based on time passed
+                time_passed = now - self.last_update
+                self.tokens = min(self.max_rate, self.tokens + time_passed * self.max_rate)
+                self.last_update = now
+
+            if self.tokens < 1:
+                # Wait for token to become available
+                wait_time = (1 - self.tokens) / self.max_rate
+                await asyncio.sleep(wait_time)
+                self.tokens = 0
+            else:
+                self.tokens -= 1
+
+
+# Global rate limiter - 10 requests per second
+_rate_limiter = RateLimiter(max_rate=10.0)
+
+
 async def get_client() -> httpx.AsyncClient:
     """Get a persistent httpx client for Home Assistant API calls"""
     global _client
@@ -163,6 +210,8 @@ async def call_websocket_api(message_type: str, **kwargs) -> Dict[str, Any]:
         # Validates certificates by default - no need for explicit verify_mode
 
     try:
+        # Apply rate limiting before making connection
+        await _rate_limiter.acquire()
         async with websockets.connect(ws_url, ssl=ssl_context) as websocket:
             # Wait for auth required message
             auth_msg = await websocket.recv()
@@ -215,6 +264,7 @@ async def call_websocket_api(message_type: str, **kwargs) -> Dict[str, Any]:
 # Direct entity retrieval function
 async def get_all_entity_states() -> Dict[str, Dict[str, Any]]:
     """Fetch all entity states from Home Assistant"""
+    await _rate_limiter.acquire()
     client = await get_client()
     response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
     response.raise_for_status()
@@ -271,6 +321,7 @@ def filter_fields(data: Dict[str, Any], fields: List[str]) -> Dict[str, Any]:
 @handle_api_errors
 async def get_hass_version() -> str:
     """Get the Home Assistant version from the API"""
+    await _rate_limiter.acquire()
     client = await get_client()
     response = await client.get(f"{HA_URL}/api/config", headers=get_ha_headers())
     response.raise_for_status()
@@ -300,9 +351,10 @@ async def get_entity_state(
         Entity state dictionary, optionally filtered to include only specified fields
     """
     # Fetch directly
+    await _rate_limiter.acquire()
     client = await get_client()
     response = await client.get(
-        f"{HA_URL}/api/states/{entity_id}", 
+        f"{HA_URL}/api/states/{entity_id}",
         headers=get_ha_headers()
     )
     response.raise_for_status()
@@ -350,6 +402,7 @@ async def get_entities(
         and optionally limited to specific fields
     """
     # Get all entities directly
+    await _rate_limiter.acquire()
     client = await get_client()
     response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
     response.raise_for_status()
@@ -427,7 +480,8 @@ async def call_service(domain: str, service: str, data: Optional[Dict[str, Any]]
     """Call a Home Assistant service"""
     if data is None:
         data = {}
-    
+
+    await _rate_limiter.acquire()
     client = await get_client()
     response = await client.post(
         f"{HA_URL}/api/services/{domain}/{service}", 
@@ -815,6 +869,7 @@ async def get_entity_history_range(
     Returns:
         A list of state change objects, or an error dictionary
     """
+    await _rate_limiter.acquire()
     client = await get_client()
 
     # Parse start_time
@@ -1013,6 +1068,7 @@ async def get_system_overview() -> Dict[str, Any]:
     try:
         # Get ALL entities with minimal fields for efficiency
         # We retrieve all entities since API calls don't consume tokens, only responses do
+        await _rate_limiter.acquire()
         client = await get_client()
         response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
         response.raise_for_status()
