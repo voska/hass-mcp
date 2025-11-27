@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 import json
 import asyncio
+import ssl
 import websockets
 
 from app.config import HA_URL, HA_TOKEN, get_ha_headers
@@ -128,8 +129,14 @@ async def call_websocket_api(message_type: str, **kwargs) -> Dict[str, Any]:
     ws_url = HA_URL.replace("http://", "ws://").replace("https://", "wss://")
     ws_url = f"{ws_url}/api/websocket"
 
+    # Use SSL context for secure WebSocket connections
+    ssl_context = None
+    if ws_url.startswith("wss://"):
+        ssl_context = ssl.create_default_context()
+        # Validates certificates by default - no need for explicit verify_mode
+
     try:
-        async with websockets.connect(ws_url) as websocket:
+        async with websockets.connect(ws_url, ssl=ssl_context) as websocket:
             # Wait for auth required message
             auth_msg = await websocket.recv()
             auth_data = json.loads(auth_msg)
