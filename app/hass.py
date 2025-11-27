@@ -44,6 +44,33 @@ DOMAIN_IMPORTANT_ATTRIBUTES = {
     "script": ["last_triggered"],
 }
 
+# Sensitive keys that should be redacted in logs
+_SENSITIVE_KEYS = frozenset([
+    "token", "password", "api_key", "secret", "access_token",
+    "authorization", "auth", "credential", "key", "pin", "code"
+])
+
+
+def sanitize_for_logging(data: Any) -> Any:
+    """
+    Sanitize data for safe logging by redacting sensitive fields.
+
+    Args:
+        data: The data to sanitize (dict, list, or primitive)
+
+    Returns:
+        Sanitized copy of the data with sensitive values redacted
+    """
+    if isinstance(data, dict):
+        return {
+            k: "***REDACTED***" if k.lower() in _SENSITIVE_KEYS else sanitize_for_logging(v)
+            for k, v in data.items()
+        }
+    elif isinstance(data, list):
+        return [sanitize_for_logging(item) for item in data]
+    else:
+        return data
+
 def handle_api_errors(func: F) -> F:
     """
     Decorator to handle common error cases for Home Assistant API calls

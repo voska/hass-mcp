@@ -19,7 +19,8 @@ from app.hass import (
     get_automations, restart_home_assistant,
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
     get_hass_error_log, get_entity_history, get_entity_history_range,
-    list_automation_traces, get_automation_trace
+    list_automation_traces, get_automation_trace,
+    sanitize_for_logging
 )
 
 # Type variable for generic functions
@@ -122,7 +123,7 @@ async def entity_action(entity_id: str, action: str, params: Optional[Dict[str, 
     # Prepare service data
     data = {"entity_id": entity_id, **(params or {})}
     
-    logger.info(f"Performing action '{action}' on entity: {entity_id} with params: {params}")
+    logger.info(f"Performing action '{action}' on entity: {entity_id} with params: {sanitize_for_logging(params)}")
     return await call_service(domain, service, data)
 
 @mcp.resource("hass://entities/{entity_id}")
@@ -976,7 +977,7 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
         domain='fan', service='set_percentage', data={'entity_id': 'fan.x', 'percentage': 50}
     
     """
-    logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
+    logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {sanitize_for_logging(data)}")
     return await call_service(domain, service, data or {})
 
 # Prompt functionality
