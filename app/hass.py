@@ -47,7 +47,9 @@ DOMAIN_IMPORTANT_ATTRIBUTES = {
 # Sensitive keys that should be redacted in logs
 _SENSITIVE_KEYS = frozenset([
     "token", "password", "api_key", "secret", "access_token",
-    "authorization", "auth", "credential", "key", "pin", "code"
+    "authorization", "auth", "credential", "key", "pin", "code",
+    "bearer", "refresh_token", "client_secret", "private_key",
+    "passphrase", "session", "cookie"
 ])
 
 
@@ -163,7 +165,8 @@ class RateLimiter:
                 # Wait for token to become available
                 wait_time = (1 - self.tokens) / self.max_rate
                 await asyncio.sleep(wait_time)
-                self.tokens = 0
+                # Token is now available after waiting - deduct it
+                self.tokens -= 1
             else:
                 self.tokens -= 1
 
