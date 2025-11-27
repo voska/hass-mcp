@@ -89,13 +89,20 @@ def handle_api_errors(func: F) -> F:
     
     return cast(F, wrapper)
 
-# Persistent HTTP client
+# Persistent HTTP client with granular timeout configuration
+_timeout_config = httpx.Timeout(
+    connect=5.0,    # Connection timeout - fail fast on unreachable hosts
+    read=30.0,      # Read timeout - allow time for long-running queries (stats, history)
+    write=5.0,      # Write timeout - service calls should be quick
+    pool=5.0        # Pool timeout - waiting for available connection
+)
+
 async def get_client() -> httpx.AsyncClient:
     """Get a persistent httpx client for Home Assistant API calls"""
     global _client
     if _client is None:
         logger.debug("Creating new HTTP client")
-        _client = httpx.AsyncClient(timeout=10.0)
+        _client = httpx.AsyncClient(timeout=_timeout_config)
     return _client
 
 async def cleanup_client() -> None:
