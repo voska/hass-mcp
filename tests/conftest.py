@@ -77,6 +77,6 @@ def mock_config():
     return {
         "hass_url": "http://localhost:8123",
         "hass_token": "mock_token",
-        "config_dir": "/Users/matt/Developer/hass-mcp/config",
+        "config_dir": "/tmp/hass-mcp-plus-test/config",
         "log_level": "INFO"
     }

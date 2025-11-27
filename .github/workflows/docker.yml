@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: voska/hass-mcp
+  DOCKER_IMAGE: rmaher001/hass-mcp-plus
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:

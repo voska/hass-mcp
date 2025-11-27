@@ -3,11 +3,21 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hass-mcp"
-version = "0.1.1"
-description = "Home Assistant Model Context Protocol (MCP) server"
+name = "hass-mcp-plus"
+version = "0.2.0"
+description = "Home Assistant Model Context Protocol (MCP) server - Enhanced fork with automation traces and improved token efficiency"
 readme = "README.md"
 requires-python = ">=3.13"
+license = {text = "MIT"}
+keywords = ["home-assistant", "mcp", "model-context-protocol", "claude", "llm", "smart-home"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+]
+
 dependencies = [
     "mcp[cli]>=1.4.1",
     "httpx>=0.27.0",
@@ -21,8 +31,13 @@ test = [
 ]
 
 [project.scripts]
-hass-mcp = "app.run:main"
+hass-mcp-plus = "app.run:main"
 test = "pytest:main"
+
+[project.urls]
+Homepage = "https://github.com/rmaher001/hass-mcp-plus"
+Repository = "https://github.com/rmaher001/hass-mcp-plus"
+Issues = "https://github.com/rmaher001/hass-mcp-plus/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
