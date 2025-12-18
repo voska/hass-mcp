@@ -30,6 +30,7 @@ Hass-MCP enables AI assistants like Claude to interact directly with your Home A
 - **Automation Support**: List and control automations
 - **Guided Conversations**: Use prompts for common tasks like creating automations
 - **Smart Search**: Find entities by name, type, or state
+- **Advanced Error Log Filtering**: Filter logs by level, integration, keywords, or line limit for efficient troubleshooting
 - **Token Efficiency**: Lean JSON responses to minimize token usage
 
 ## Installation
@@ -167,6 +168,9 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 - "Create an automation that turns on the lights at sunset"
 - "Help me troubleshoot why my bedroom motion sensor automation isn't working"
 - "Search for entities related to my living room"
+- "Show me the last 50 error log entries"
+- "Get MQTT integration errors from the log"
+- "Find all warnings containing 'timeout' in the error log"
 
 ## Available Tools
 
@@ -182,7 +186,25 @@ Hass-MCP provides several tools for interacting with Home Assistant:
 - `call_service_tool`: Call any Home Assistant service
 - `restart_ha`: Restart Home Assistant
 - `get_history`: Get the state history of an entity
-- `get_error_log`: Get the Home Assistant error log
+- `get_error_log`: Get the Home Assistant error log with optional filtering by level, integration, search term, or line limit
+
+### Error Log Filtering
+
+The `get_error_log` tool supports advanced filtering to help you efficiently troubleshoot issues:
+
+**Filter Parameters:**
+- `level`: Filter by log level (ERROR, WARNING, INFO, DEBUG)
+- `integration`: Filter by integration name (e.g., 'mqtt', 'zwave', 'homeassistant')
+- `search_term`: Filter by keyword or phrase (case-insensitive)
+- `lines`: Limit number of lines returned (returns most recent N lines)
+
+**Filter Examples:**
+- `level="ERROR"` - Show only error entries
+- `integration="mqtt", lines=50` - Get last 50 MQTT integration log entries
+- `search_term="timeout", level="WARNING"` - Get warnings containing "timeout"
+- `lines=100` - Get last 100 log entries
+
+Filters can be combined for more precise results, improving token efficiency by returning only relevant log data.
 
 ## Prompts for Guided Conversations
 
