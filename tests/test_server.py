@@ -303,3 +303,66 @@ class TestMCPServer:
             # Verify the function call with lean=True parameter
             mock_get_state.assert_called_with("light.living_room", lean=True)
             assert result == mock_filtered
+
+    @pytest.mark.asyncio
+    async def test_call_service_tool_returns_dict(self):
+        """Test that call_service_tool always returns a dictionary.
+
+        This is a regression test for issue #29 where call_service_tool
+        returned a raw list from the HA API, causing Pydantic validation errors.
+        """
+        from app.server import call_service_tool
+
+        with patch("app.server.call_service") as mock_call_service:
+            # Test with empty list response (e.g., automation.reload)
+            mock_call_service.return_value = []
+
+            result = await call_service_tool(domain="automation", service="reload")
+
+            assert isinstance(result, dict), "call_service_tool must return a dict"
+            assert result["success"] is True
+            assert result["domain"] == "automation"
+            assert result["service"] == "reload"
+            assert result["affected_entities"] == []
+
+            # Test with list of affected entities (e.g., light.turn_on)
+            mock_call_service.reset_mock()
+            mock_affected_entities = [
+                {"entity_id": "light.living_room", "state": "on"},
+                {"entity_id": "light.kitchen", "state": "on"}
+            ]
+            mock_call_service.return_value = mock_affected_entities
+
+            result = await call_service_tool(
+                domain="light",
+                service="turn_on",
+                data={"entity_id": "light.living_room"}
+            )
+
+            assert isinstance(result, dict), "call_service_tool must return a dict"
+            assert result["success"] is True
+            assert result["domain"] == "light"
+            assert result["service"] == "turn_on"
+            assert result["affected_entities"] == mock_affected_entities
+            assert len(result["affected_entities"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_call_service_tool_with_data(self):
+        """Test call_service_tool passes data correctly to the underlying service."""
+        from app.server import call_service_tool
+
+        with patch("app.server.call_service") as mock_call_service:
+            mock_call_service.return_value = [{"entity_id": "fan.bedroom", "state": "on"}]
+
+            result = await call_service_tool(
+                domain="fan",
+                service="set_percentage",
+                data={"entity_id": "fan.bedroom", "percentage": 50}
+            )
+
+            mock_call_service.assert_called_once_with(
+                "fan", "set_percentage", {"entity_id": "fan.bedroom", "percentage": 50}
+            )
+            assert result["success"] is True
+            assert result["domain"] == "fan"
+            assert result["service"] == "set_percentage"

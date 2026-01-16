@@ -310,8 +310,12 @@ async def get_entities(
         return entities
 
 @handle_api_errors
-async def call_service(domain: str, service: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Call a Home Assistant service"""
+async def call_service(domain: str, service: str, data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Call a Home Assistant service.
+
+    Returns:
+        List of affected entity states (may be empty for services like reload)
+    """
     if data is None:
         data = {}
     
