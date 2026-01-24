@@ -452,17 +452,21 @@ async def get_hass_error_log() -> Dict[str, Any]:
         - error: Error message if retrieval failed
     """
     try:
-        headers = get_ha_headers()
-
         # Use different endpoint based on whether running through Supervisor
         if IS_SUPERVISOR:
             # Supervisor uses /core/logs endpoint (returns journald logs)
             # Extract base supervisor URL (e.g., http://supervisor from http://supervisor/core)
             supervisor_base = HA_URL.rsplit('/core', 1)[0] if '/core' in HA_URL else HA_URL.rsplit('/', 1)[0]
             url = f"{supervisor_base}/core/logs"
+            # Supervisor logs endpoint needs different headers
+            headers = {
+                "Authorization": f"Bearer {HA_TOKEN}",
+                "Accept": "text/plain",
+            }
         else:
             # Direct Home Assistant API endpoint
             url = f"{HA_URL}/api/error_log"
+            headers = get_ha_headers()
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=30)
