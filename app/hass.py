@@ -5,7 +5,7 @@ import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 
-from app.config import HA_URL, HA_TOKEN, IS_SUPERVISOR, get_ha_headers
+from app.config import HA_URL, HA_TOKEN, get_ha_headers
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -452,21 +452,11 @@ async def get_hass_error_log() -> Dict[str, Any]:
         - error: Error message if retrieval failed
     """
     try:
-        # Use different endpoint based on whether running through Supervisor
-        if IS_SUPERVISOR:
-            # Supervisor uses /core/logs endpoint (returns journald logs)
-            # Extract base supervisor URL (e.g., http://supervisor from http://supervisor/core)
-            supervisor_base = HA_URL.rsplit('/core', 1)[0] if '/core' in HA_URL else HA_URL.rsplit('/', 1)[0]
-            url = f"{supervisor_base}/core/logs"
-            # Supervisor logs endpoint needs different headers
-            headers = {
-                "Authorization": f"Bearer {HA_TOKEN}",
-                "Accept": "text/plain",
-            }
-        else:
-            # Direct Home Assistant API endpoint
-            url = f"{HA_URL}/api/error_log"
-            headers = get_ha_headers()
+        # Use the Home Assistant API error_log endpoint
+        # When running through Supervisor with HA_URL=http://supervisor/core,
+        # this becomes http://supervisor/core/api/error_log
+        url = f"{HA_URL}/api/error_log"
+        headers = get_ha_headers()
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=30)
