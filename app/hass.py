@@ -5,7 +5,7 @@ import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 
-from app.config import HA_URL, HA_TOKEN, get_ha_headers
+from app.config import HA_URL, HA_TOKEN, IS_SUPERVISOR, get_ha_headers
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -442,7 +442,7 @@ async def restart_home_assistant() -> Dict[str, Any]:
 async def get_hass_error_log() -> Dict[str, Any]:
     """
     Get the Home Assistant error log for troubleshooting
-    
+
     Returns:
         A dictionary containing:
         - log_text: The full error log text
@@ -452,31 +452,39 @@ async def get_hass_error_log() -> Dict[str, Any]:
         - error: Error message if retrieval failed
     """
     try:
-        # Call the Home Assistant API error_log endpoint
-        url = f"{HA_URL}/api/error_log"
         headers = get_ha_headers()
-        
+
+        # Use different endpoint based on whether running through Supervisor
+        if IS_SUPERVISOR:
+            # Supervisor uses /core/logs endpoint (returns journald logs)
+            # Extract base supervisor URL (e.g., http://supervisor from http://supervisor/core)
+            supervisor_base = HA_URL.rsplit('/core', 1)[0] if '/core' in HA_URL else HA_URL.rsplit('/', 1)[0]
+            url = f"{supervisor_base}/core/logs"
+        else:
+            # Direct Home Assistant API endpoint
+            url = f"{HA_URL}/api/error_log"
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=30)
-            
+
             if response.status_code == 200:
                 log_text = response.text
-                
+
                 # Count errors and warnings
                 error_count = log_text.count("ERROR")
                 warning_count = log_text.count("WARNING")
-                
+
                 # Extract integration mentions
                 import re
                 integration_mentions = {}
-                
+
                 # Look for patterns like [mqtt], [zwave], etc.
                 for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
                     integration = match.group(1).lower()
                     if integration not in integration_mentions:
                         integration_mentions[integration] = 0
                     integration_mentions[integration] += 1
-                
+
                 return {
                     "log_text": log_text,
                     "error_count": error_count,

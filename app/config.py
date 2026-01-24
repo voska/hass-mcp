@@ -5,6 +5,9 @@ from typing import Optional
 HA_URL: str = os.environ.get("HA_URL", "http://localhost:8123")
 HA_TOKEN: str = os.environ.get("HA_TOKEN", "")
 
+# Detect if running through Supervisor
+IS_SUPERVISOR: bool = "supervisor" in HA_URL.lower()
+
 def get_ha_headers() -> dict:
     """Return the headers needed for Home Assistant API requests"""
     headers = {
