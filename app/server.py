@@ -882,23 +882,27 @@ async def restart_ha() -> Dict[str, Any]:
 async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Call any Home Assistant service (low-level API access)
-    
+
     Args:
         domain: The domain of the service (e.g., 'light', 'switch', 'automation')
         service: The service to call (e.g., 'turn_on', 'turn_off', 'toggle')
         data: Optional data to pass to the service (e.g., {'entity_id': 'light.living_room'})
-    
+
     Returns:
         The response from Home Assistant (usually empty for successful calls)
-    
+
     Examples:
         domain='light', service='turn_on', data={'entity_id': 'light.x', 'brightness': 255}
         domain='automation', service='reload'
         domain='fan', service='set_percentage', data={'entity_id': 'fan.x', 'percentage': 50}
-    
+
     """
     logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
-    return await call_service(domain, service, data or {})
+    result = await call_service(domain, service, data or {})
+    # Return confirmation message if HA returns empty response (common for fire-and-forget services)
+    if not result or (isinstance(result, list) and len(result) == 0):
+        return {"success": True, "message": f"Service {domain}.{service} called successfully"}
+    return result
 
 # Prompt functionality
 @mcp.prompt()
