@@ -442,7 +442,7 @@ async def restart_home_assistant() -> Dict[str, Any]:
 async def get_hass_error_log() -> Dict[str, Any]:
     """
     Get the Home Assistant error log for troubleshooting
-    
+
     Returns:
         A dictionary containing:
         - log_text: The full error log text
@@ -451,47 +451,69 @@ async def get_hass_error_log() -> Dict[str, Any]:
         - integration_mentions: Map of integration names to mention counts
         - error: Error message if retrieval failed
     """
+    import re
+
+    def strip_ansi_codes(text: str) -> str:
+        """Remove ANSI color codes from text"""
+        ansi_pattern = re.compile(r'\x1b\[[0-9;]*m')
+        return ansi_pattern.sub('', text)
+
+    def parse_log_text(log_text: str) -> Dict[str, Any]:
+        """Parse log text and extract statistics"""
+        # Strip ANSI codes for accurate parsing
+        clean_text = strip_ansi_codes(log_text)
+
+        # Count errors and warnings
+        error_count = clean_text.count("ERROR")
+        warning_count = clean_text.count("WARNING")
+
+        # Extract integration mentions
+        integration_mentions = {}
+
+        # Look for patterns like [mqtt], [zwave], [homeassistant.components.X], etc.
+        for match in re.finditer(r'\[([a-zA-Z0-9_\.]+)\]', clean_text):
+            integration = match.group(1).lower()
+            # Extract component name from homeassistant.components.X patterns
+            if integration.startswith('homeassistant.components.'):
+                integration = integration.split('.')[-1]
+            if integration not in integration_mentions:
+                integration_mentions[integration] = 0
+            integration_mentions[integration] += 1
+
+        return {
+            "log_text": clean_text,
+            "error_count": error_count,
+            "warning_count": warning_count,
+            "integration_mentions": integration_mentions
+        }
+
     try:
-        # Call the Home Assistant API error_log endpoint
-        url = f"{HA_URL}/api/error_log"
         headers = get_ha_headers()
-        
+
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=30)
-            
+            # Try HA OS / Supervised endpoint first (most common setup)
+            hassio_url = f"{HA_URL}/api/hassio/core/logs"
+            response = await client.get(hassio_url, headers=headers, timeout=30)
+
             if response.status_code == 200:
-                log_text = response.text
-                
-                # Count errors and warnings
-                error_count = log_text.count("ERROR")
-                warning_count = log_text.count("WARNING")
-                
-                # Extract integration mentions
-                import re
-                integration_mentions = {}
-                
-                # Look for patterns like [mqtt], [zwave], etc.
-                for match in re.finditer(r'\[([a-zA-Z0-9_]+)\]', log_text):
-                    integration = match.group(1).lower()
-                    if integration not in integration_mentions:
-                        integration_mentions[integration] = 0
-                    integration_mentions[integration] += 1
-                
-                return {
-                    "log_text": log_text,
-                    "error_count": error_count,
-                    "warning_count": warning_count,
-                    "integration_mentions": integration_mentions
-                }
-            else:
-                return {
-                    "error": f"Error retrieving error log: {response.status_code} {response.reason_phrase}",
-                    "details": response.text,
-                    "log_text": "",
-                    "error_count": 0,
-                    "warning_count": 0,
-                    "integration_mentions": {}
-                }
+                return parse_log_text(response.text)
+
+            # Fall back to standalone HA endpoint
+            standalone_url = f"{HA_URL}/api/error_log"
+            response = await client.get(standalone_url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                return parse_log_text(response.text)
+
+            # Both endpoints failed
+            return {
+                "error": f"Error retrieving error log: {response.status_code} {response.reason_phrase}",
+                "details": "Neither /api/hassio/core/logs nor /api/error_log endpoints are available",
+                "log_text": "",
+                "error_count": 0,
+                "warning_count": 0,
+                "integration_mentions": {}
+            }
     except Exception as e:
         logger.error(f"Error retrieving Home Assistant error log: {str(e)}")
         return {
