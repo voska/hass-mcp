@@ -1,5 +1,6 @@
 # Ignore version control files
-.git
+# .git is intentionally NOT excluded — hatch-vcs reads version from git tags
+# during the builder stage. The final runtime image (stage 2) does not carry .git.
 .gitignore
 
 # Ignore Docker and CI files
@@ -15,6 +16,10 @@ __pycache__
 .Python
 *.egg-info/
 *.egg
+
+# Ignore build artifacts
+dist/
+build/
 
 # Ignore environment and local files
 .env
