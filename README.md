@@ -206,6 +206,8 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 
 - "What's the current state of my living room lights?"
 - "Turn off all the lights in the kitchen"
+- "What's the temperature in the master bedroom?"
+- "List everything in the guest room"
 - "List all my sensors that contain temperature data"
 - "Give me a summary of my climate entities"
 - "Create an automation that turns on the lights at sunset"
@@ -227,6 +229,7 @@ Hass-MCP provides several tools for interacting with Home Assistant:
 - `restart_ha`: Restart Home Assistant
 - `get_history`: Get the state history of an entity
 - `get_error_log`: Get the Home Assistant error log
+- `get_entities_by_area`: List entities in a specific area / room
 
 ## Prompts for Guided Conversations
 

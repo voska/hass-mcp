@@ -5,6 +5,7 @@ import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 
+from app.areas import get_area, get_all_areas
 from app.config import HA_URL, HA_TOKEN, get_ha_headers
 
 # Set up logging
@@ -19,7 +20,7 @@ _client: Optional[httpx.AsyncClient] = None
 
 # Default field sets for different verbosity levels
 # Lean fields for standard requests (optimized for token efficiency)
-DEFAULT_LEAN_FIELDS = ["entity_id", "state", "attr.friendly_name"]
+DEFAULT_LEAN_FIELDS = ["entity_id", "state", "area", "attr.friendly_name"]
 
 # Common fields that are typically needed for entity operations
 DEFAULT_STANDARD_FIELDS = ["entity_id", "state", "attributes", "last_updated"]
@@ -140,6 +141,10 @@ def filter_fields(data: Dict[str, Any], fields: List[str]) -> Dict[str, Any]:
     for field in fields:
         if field == "state":
             result["state"] = data.get("state")
+        elif field == "area":
+            # Area is injected by hass-mcp from the HA area registry; absent
+            # in the raw /api/states payload but added before filtering.
+            result["area"] = data.get("area")
         elif field == "attributes":
             result["attributes"] = data.get("attributes", {})
         elif field.startswith("attr.") and len(field) > 5:
@@ -189,12 +194,16 @@ async def get_entity_state(
     # Fetch directly
     client = await get_client()
     response = await client.get(
-        f"{HA_URL}/api/states/{entity_id}", 
+        f"{HA_URL}/api/states/{entity_id}",
         headers=get_ha_headers()
     )
     response.raise_for_status()
     entity_data = response.json()
-    
+
+    # Enrich with area data from the HA area registry (HA's REST states
+    # endpoint omits this; we resolve it via /api/template — see app/areas.py).
+    entity_data["area"] = await get_area(client, entity_id)
+
     # Apply field filtering if requested
     if fields:
         # User-specified fields take precedence
@@ -241,7 +250,13 @@ async def get_entities(
     response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
     response.raise_for_status()
     entities = response.json()
-    
+
+    # Enrich each entity with area data. One bulk template call covers
+    # the whole list regardless of size.
+    areas = await get_all_areas(client)
+    for entity in entities:
+        entity["area"] = areas.get(entity["entity_id"])
+
     # Filter by domain if specified
     if domain:
         entities = [entity for entity in entities if entity["entity_id"].startswith(f"{domain}.")]
@@ -578,20 +593,24 @@ async def get_system_overview() -> Dict[str, Any]:
         response = await client.get(f"{HA_URL}/api/states", headers=get_ha_headers())
         response.raise_for_status()
         all_entities_raw = response.json()
-        
+
+        # Resolve areas in one bulk template call.
+        areas = await get_all_areas(client)
+
         # Apply lean formatting to reduce token usage in the response
         all_entities = []
         for entity in all_entities_raw:
+            entity["area"] = areas.get(entity["entity_id"])
             domain = entity["entity_id"].split(".")[0]
-            
+
             # Start with basic lean fields
-            lean_fields = ["entity_id", "state", "attr.friendly_name"]
-            
+            lean_fields = ["entity_id", "state", "area", "attr.friendly_name"]
+
             # Add domain-specific important attributes
             if domain in DOMAIN_IMPORTANT_ATTRIBUTES:
                 for attr in DOMAIN_IMPORTANT_ATTRIBUTES[domain]:
                     lean_fields.append(f"attr.{attr}")
-            
+
             # Filter and add to result
             all_entities.append(filter_fields(entity, lean_fields))
         
@@ -655,17 +674,19 @@ async def get_system_overview() -> Dict[str, Any]:
             common_attributes = sorted(attribute_counts.items(), key=lambda x: x[1], reverse=True)[:5]
             overview["domain_attributes"][domain] = [attr for attr, count in common_attributes]
             
-            # Group by area if available
+            # Group by area. Entities without an area land under "Unassigned"
+            # rather than the misleading "Unknown" the previous implementation
+            # produced (it was reading area from attributes, which HA does
+            # not populate — see Issue #28).
             for entity in entities:
-                area_id = entity.get("attributes", {}).get("area_id", "Unknown")
-                area_name = entity.get("attributes", {}).get("area_name", area_id)
-                
+                area_name = entity.get("area") or "Unassigned"
+
                 if area_name not in overview["area_distribution"]:
                     overview["area_distribution"][area_name] = {}
-                
+
                 if domain not in overview["area_distribution"][area_name]:
                     overview["area_distribution"][area_name][domain] = 0
-                    
+
                 overview["area_distribution"][area_name][domain] += 1
         
         # Add summary information

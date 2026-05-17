@@ -129,7 +129,7 @@ async def test_docker_stdio_transport(docker_image):
             init = await session.initialize()
             assert init.serverInfo.name == "Hass-MCP"
             tools = await session.list_tools()
-            assert len(tools.tools) == 12
+            assert len(tools.tools) == 13
             prompts = await session.list_prompts()
             assert len(prompts.prompts) == 7
 
@@ -163,7 +163,7 @@ async def test_docker_streamable_http_transport(docker_image):
                 init = await session.initialize()
                 assert init.serverInfo.name == "Hass-MCP"
                 tools = await session.list_tools()
-                assert len(tools.tools) == 12
+                assert len(tools.tools) == 13
 
                 result = await session.call_tool("get_version", {})
                 assert not result.isError

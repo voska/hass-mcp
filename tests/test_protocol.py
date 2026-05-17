@@ -37,6 +37,16 @@ def mock_get_client():
     yield
 
 
+@pytest.fixture(autouse=True)
+def reset_area_cache():
+    """Area cache is a module-level singleton; force a fresh fetch each test
+    so respx mocks of /api/template are honored."""
+    from app.areas import invalidate_cache
+    invalidate_cache()
+    yield
+    invalidate_cache()
+
+
 # --- Sanity tests (expected to pass on master) ------------------------------
 
 async def test_initialize_handshake():
@@ -52,6 +62,7 @@ EXPECTED_TOOLS = {
     "call_service_tool",
     "domain_summary_tool",
     "entity_action",
+    "get_entities_by_area",
     "get_entity",
     "get_error_log",
     "get_history",
@@ -170,6 +181,9 @@ async def test_get_entity_via_protocol():
             },
         )
     )
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(200, text="light.kitchen\x1fKitchen")
+    )
     async with create_connected_server_and_client_session(
         mcp._mcp_server, raise_exceptions=True
     ) as client:
@@ -177,7 +191,133 @@ async def test_get_entity_via_protocol():
             "get_entity", arguments={"entity_id": "light.kitchen"}
         )
         assert not result.isError
-        assert "on" in result.content[0].text
+        text = result.content[0].text
+        assert "on" in text
+        assert "Kitchen" in text, "area should be surfaced in the lean response"
+
+
+# --- area resolution -------------------------------------------------------
+
+@respx.mock
+async def test_get_entity_includes_area_from_template():
+    """Single-entity area lookup hits /api/template; area surfaces in output."""
+    respx.get("http://localhost:8123/api/states/light.living_room").mock(
+        return_value=httpx.Response(200, json={
+            "entity_id": "light.living_room",
+            "state": "on",
+            "attributes": {"friendly_name": "Living Room Lamp"},
+            "last_changed": "2026-01-01T00:00:00+00:00",
+            "last_updated": "2026-01-01T00:00:00+00:00",
+        })
+    )
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(
+            200, text="light.living_room\x1fLiving Room\nlight.kitchen\x1fKitchen"
+        )
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_entity", arguments={"entity_id": "light.living_room"}
+        )
+        assert not result.isError
+        assert "Living Room" in result.content[0].text
+
+
+@respx.mock
+async def test_entity_without_area_returns_null_not_unknown():
+    """Entities with no area assigned must surface as None, not 'Unknown' —
+    Issue #28 was caused by the previous 'Unknown' fallback misleading the LLM."""
+    import json
+
+    respx.get("http://localhost:8123/api/states/sensor.backup_state").mock(
+        return_value=httpx.Response(200, json={
+            "entity_id": "sensor.backup_state",
+            "state": "idle",
+            "attributes": {},
+            "last_changed": "2026-01-01T00:00:00+00:00",
+            "last_updated": "2026-01-01T00:00:00+00:00",
+        })
+    )
+    # Template returns the entity with empty area (the canonical "no area" shape).
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(200, text="sensor.backup_state\x1f")
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_entity",
+            arguments={"entity_id": "sensor.backup_state", "detailed": True},
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["area"] is None, f"area should be null, got {payload['area']!r}"
+
+
+@respx.mock
+async def test_get_entities_by_area_filters_correctly():
+    """get_entities_by_area must return only entities in the named area,
+    case-insensitively, and pass through additional domain filtering."""
+    import json
+
+    respx.get("http://localhost:8123/api/states").mock(
+        return_value=httpx.Response(200, json=[
+            {"entity_id": "light.kitchen", "state": "on", "attributes": {}},
+            {"entity_id": "light.bedroom", "state": "off", "attributes": {}},
+            {"entity_id": "sensor.kitchen_temp", "state": "20", "attributes": {}},
+        ])
+    )
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(200, text=(
+            "light.kitchen\x1fKitchen\n"
+            "light.bedroom\x1fBedroom\n"
+            "sensor.kitchen_temp\x1fKitchen"
+        ))
+    )
+
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        # Case-insensitive area match, no domain filter.
+        result = await client.call_tool("get_entities_by_area", {"area": "kitchen"})
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["count"] == 2
+        ids = {e["entity_id"] for e in payload["entities"]}
+        assert ids == {"light.kitchen", "sensor.kitchen_temp"}
+        assert payload["area"] == "Kitchen"  # canonicalized from the matched entities
+
+
+@respx.mock
+async def test_area_cache_handles_template_failure_gracefully():
+    """If /api/template fails, area lookups return None but the tool still
+    succeeds — area is a best-effort enrichment, not a hard requirement."""
+    import json
+
+    respx.get("http://localhost:8123/api/states/light.kitchen").mock(
+        return_value=httpx.Response(200, json={
+            "entity_id": "light.kitchen",
+            "state": "on",
+            "attributes": {},
+            "last_changed": "2026-01-01T00:00:00+00:00",
+            "last_updated": "2026-01-01T00:00:00+00:00",
+        })
+    )
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_entity",
+            arguments={"entity_id": "light.kitchen", "detailed": True},
+        )
+        assert not result.isError, "tool must not fail when area enrichment fails"
+        payload = json.loads(result.content[0].text)
+        assert payload["area"] is None
 
 
 @respx.mock

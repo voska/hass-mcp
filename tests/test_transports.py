@@ -50,6 +50,7 @@ EXPECTED_TOOLS = {
     "call_service_tool",
     "domain_summary_tool",
     "entity_action",
+    "get_entities_by_area",
     "get_entity",
     "get_error_log",
     "get_history",
