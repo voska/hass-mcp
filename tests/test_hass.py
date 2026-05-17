@@ -235,3 +235,52 @@ class TestHassAPI:
         # Verify that both functions have a docstring
         assert test_dict_function.__doc__ == "Test function that returns a dict."
         assert test_str_function.__doc__ == "Test function that returns a string."
+
+
+class TestSSLContext:
+    """The TLS verification layer must support both OS-native trust stores
+    (laptop users who installed their CA at the OS level) and explicit
+    cert-file overrides (the canonical Docker pattern)."""
+
+    def test_default_uses_truststore_os_native_store(self, monkeypatch):
+        monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+        import truststore
+        from app.hass import _build_ssl_context
+
+        ctx = _build_ssl_context()
+        assert isinstance(ctx, truststore.SSLContext)
+
+    def test_ssl_cert_file_takes_precedence(self, monkeypatch, tmp_path):
+        # Build a minimal valid PEM certificate so create_default_context
+        # can actually load it. (Self-signed dummy, not used for trust.)
+        import datetime
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.x509.oid import NameOID
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-ca")])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+            .sign(key, hashes.SHA256())
+        )
+        pem_path = tmp_path / "test-ca.crt"
+        pem_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+        monkeypatch.setenv("SSL_CERT_FILE", str(pem_path))
+
+        import ssl
+        import truststore
+        from app.hass import _build_ssl_context
+
+        ctx = _build_ssl_context()
+        # Standard SSLContext loaded from the file, not truststore.
+        assert isinstance(ctx, ssl.SSLContext)
+        assert not isinstance(ctx, truststore.SSLContext)

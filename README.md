@@ -200,6 +200,24 @@ The MCP endpoint is at `/mcp`. Point your client at `http://<host>:<port>/mcp`.
 
 The server honors the `PORT` environment variable (Smithery's convention) in addition to `MCP_PORT`. Smithery deployment requires `--http` mode and reads `PORT` automatically.
 
+## Custom / private CA
+
+If your Home Assistant instance serves a certificate signed by your own CA (step-ca, smallstep, homelab OpenSSL), hass-mcp can verify it without disabling TLS:
+
+- **Locally**: install the CA root in your OS trust store (macOS Keychain, Windows Cert Store, or `update-ca-certificates` on Linux). hass-mcp picks it up automatically via [truststore](https://truststore.readthedocs.io/).
+- **In Docker** (or any sandboxed runtime): bind-mount the CA file and point `SSL_CERT_FILE` at it.
+
+```bash
+docker run --rm \
+  -v /path/to/your-ca.crt:/etc/ssl/certs/your-ca.crt:ro \
+  -e SSL_CERT_FILE=/etc/ssl/certs/your-ca.crt \
+  -e HA_URL=https://homeassistant.example.internal:8123 \
+  -e HA_TOKEN=YOUR_LONG_LIVED_TOKEN \
+  voska/hass-mcp:latest
+```
+
+`SSL_CERT_FILE` always takes precedence over the OS store when set. `verify=False` is intentionally not supported — use `HA_URL=http://...` if you genuinely want unencrypted local LAN traffic.
+
 ## Usage Examples
 
 Here are some examples of prompts you can use with Claude once Hass-MCP is set up:

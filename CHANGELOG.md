@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Custom CA support for users running their own PKI (step-ca, smallstep,
+  homelab OpenSSL). hass-mcp now verifies HTTPS against the OS-native
+  trust store (macOS Keychain / Windows Cert Store / Linux
+  ca-certificates) via [truststore](https://truststore.readthedocs.io/),
+  and honors `SSL_CERT_FILE` for explicit overrides (the canonical
+  Docker pattern: bind-mount the CA file, set the env var). Supersedes
+  [#15] with a portable, defaults-safe mechanism — no `verify=False`
+  fallback, no requests-specific `REQUESTS_CA_BUNDLE` shim.
+
 ## [0.4.0] - 2026-05-17
 
 ### Added
@@ -113,6 +123,7 @@ Initial PyPI release.
 [0.1.1]: https://github.com/voska/hass-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/voska/hass-mcp/releases/tag/v0.1.0
 
+[#15]: https://github.com/voska/hass-mcp/pull/15
 [#19]: https://github.com/voska/hass-mcp/issues/19
 [#23]: https://github.com/voska/hass-mcp/issues/23
 [#28]: https://github.com/voska/hass-mcp/issues/28
