@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-17
+
+### Added
+- Streamable HTTP transport. `hass-mcp --http` (or `python -m app --http`)
+  runs the server as an MCP streamable HTTP endpoint at `/mcp` instead of
+  stdio, enabling shared deployments behind MCP gateways, Smithery hosting,
+  and direct integration from network-based MCP clients (LibreChat,
+  OpenWebUI, custom). Stateless mode + JSON responses are enabled
+  automatically when `--http` is set, suitable for horizontally-scaled
+  hosts. Defaults bind to `127.0.0.1`; explicit `--host 0.0.0.0` required
+  to expose externally. ([#23], supersedes [#33], thanks @robertlestak)
+- End-to-end transport tests in `tests/test_transports.py` and
+  `tests/test_docker.py` that spawn the real subprocess (and Docker
+  container) and drive it through `stdio_client` / `streamable_http_client`
+  — same wire-level clients Claude Desktop uses.
+
+### Changed
+- Bumped `mcp[cli]` from `>=1.4.1` to `>=1.27,<2`. Targets the current
+  MCP spec (`2025-11-25`); 14-month leap, validated against the protocol
+  harness from v0.2.0.
+
+### Security
+- HTTP transport ships with a prominent README warning about the auth
+  gap. The MCP `2025-11-25` spec defines OAuth 2.1 as the canonical
+  HTTP auth mechanism; first-class support is coming in a follow-up
+  release. Until then, deploy behind a reverse proxy / VPN / localhost.
+
 ## [0.2.0] - 2026-05-16
 
 ### Fixed
@@ -59,7 +86,8 @@ functional changes.
 
 Initial PyPI release.
 
-[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/voska/hass-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/voska/hass-mcp/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/voska/hass-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/voska/hass-mcp/compare/v0.1.1...v0.1.2
@@ -67,5 +95,7 @@ Initial PyPI release.
 [0.1.0]: https://github.com/voska/hass-mcp/releases/tag/v0.1.0
 
 [#19]: https://github.com/voska/hass-mcp/issues/19
+[#23]: https://github.com/voska/hass-mcp/issues/23
 [#29]: https://github.com/voska/hass-mcp/issues/29
+[#33]: https://github.com/voska/hass-mcp/pull/33
 [#35]: https://github.com/voska/hass-mcp/issues/35
