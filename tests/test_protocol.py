@@ -109,10 +109,6 @@ PROMPT_ARGS = {
 }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="prompts currently return role='system' which the MCP spec rejects",
-)
 async def test_all_prompts_use_valid_roles():
     """Every prompt message must have role in {user, assistant} per MCP spec."""
     async with create_connected_server_and_client_session(
