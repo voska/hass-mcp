@@ -374,6 +374,52 @@ async def get_all_entities_resource() -> str:
     return result
 
 @mcp.tool()
+@async_handler("get_entities_by_area")
+async def get_entities_by_area(
+    area: str,
+    domain: Optional[str] = None,
+    lean: bool = True,
+) -> Dict[str, Any]:
+    """
+    Get all entities assigned to a specific Home Assistant area (room).
+
+    Area lookup is case-insensitive and matches the area's name as configured
+    in Home Assistant (e.g., "Kitchen", "Living Room"). Entities inherit their
+    area from their parent device when no area is set directly, matching HA's
+    own resolution behavior.
+
+    Args:
+        area: Name of the area to filter by (case-insensitive)
+        domain: Optional domain to further filter results (e.g., 'light')
+        lean: If True (default), returns token-efficient entity records
+
+    Returns:
+        A dictionary containing:
+        - area: The matched area name (as canonicalized by HA)
+        - count: Number of matching entities
+        - entities: List of entity records with their state and area
+
+    Examples:
+        get_entities_by_area(area="Kitchen") - everything in the kitchen
+        get_entities_by_area(area="Living Room", domain="light") - lights only
+    """
+    logger.info(f"Listing entities in area: {area} (domain={domain})")
+    entities = await get_entities(domain=domain, limit=10_000, lean=lean)
+
+    needle = area.strip().lower()
+    matches = [
+        e for e in entities
+        if (e.get("area") or "").lower() == needle
+    ]
+    canonical_area = matches[0]["area"] if matches else area
+    return {
+        "area": canonical_area,
+        "count": len(matches),
+        "entities": matches,
+    }
+
+
+@mcp.tool()
 @async_handler("search_entities_tool")
 async def search_entities_tool(query: str, limit: int = 20) -> Dict[str, Any]:
     """

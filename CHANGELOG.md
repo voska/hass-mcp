@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Per-entity `area` field on `get_entity`, `list_entities`,
+  `search_entities_tool`, and `system_overview`. Areas are resolved
+  through HA's area registry (via `/api/template` with the
+  `area_name(entity_id)` Jinja helper), which automatically falls back
+  to the parent device's area when not set directly on the entity.
+- New `get_entities_by_area` tool — list everything in a given room.
+  Case-insensitive area match, optional domain filter.
+
+### Fixed
+- `system_overview` no longer reports every entity under a fake
+  "Unknown" area. The previous code read `attributes.area_id` from
+  `/api/states`, which HA never populates; entities without a real
+  area are now bucketed under "Unassigned" and entities with one show
+  their actual area name. ([#28])
+
 ## [0.3.0] - 2026-05-17
 
 ### Added
@@ -96,6 +112,7 @@ Initial PyPI release.
 
 [#19]: https://github.com/voska/hass-mcp/issues/19
 [#23]: https://github.com/voska/hass-mcp/issues/23
+[#28]: https://github.com/voska/hass-mcp/issues/28
 [#29]: https://github.com/voska/hass-mcp/issues/29
 [#33]: https://github.com/voska/hass-mcp/pull/33
 [#35]: https://github.com/voska/hass-mcp/issues/35
