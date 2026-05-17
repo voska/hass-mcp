@@ -1,0 +1,30 @@
+name: Sync Docker Hub Description
+
+# Mirrors README.md to the Docker Hub repository overview so the page at
+# https://hub.docker.com/r/voska/hass-mcp matches what's on GitHub.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - README.md
+      - .github/workflows/dockerhub-description.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: voska/hass-mcp
+          short-description: "Home Assistant MCP server — let Claude and other LLMs control your smart home"
+          readme-filepath: ./README.md
