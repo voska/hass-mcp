@@ -1,12 +1,7 @@
-#!/usr/bin/env python
-"""Entry point for running Hass-MCP as a module"""
+"""Entry point for `python -m app`. Delegates to app.run.main so both this
+and the `hass-mcp` console script (`[project.scripts]`) take the same CLI."""
 
-from app.server import mcp
-
-
-def main():
-    """Run the MCP server with stdio communication"""
-    mcp.run()
+from app.run import main
 
 
 if __name__ == "__main__":

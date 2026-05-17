@@ -156,6 +156,50 @@ claude mcp add hass-mcp -e HA_URL=http://homeassistant.local:8123 -e HA_TOKEN=YO
 
 Replace `YOUR_LONG_LIVED_TOKEN` with your actual Home Assistant token and update the HA_URL to match your Home Assistant instance address.
 
+## HTTP Transport (Streamable)
+
+For deployments that can't use stdio — running behind an MCP gateway, hosting on Smithery, sharing one server across multiple clients, or connecting from network-based tools like LibreChat or OpenWebUI — Hass-MCP supports the MCP [streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports). The server runs in stateless mode (no `Mcp-Session-Id`, JSON responses), suitable for horizontally-scaled hosts.
+
+> [!CAUTION]
+> **HTTP mode exposes full Home Assistant control over the network.** Anyone who can reach the port can call any tool — turn off lights, unlock doors, trigger automations, restart HA. The MCP spec does not yet ship a built-in auth layer in this server. Until it does, you **must** put it behind one of:
+>
+> - A reverse proxy (nginx, Caddy, Traefik) doing basic-auth or bearer-token validation
+> - A VPN or zero-trust network (Tailscale, WireGuard, Cloudflare Access)
+> - Localhost binding only (the default — change `--host` only if you know what you're doing)
+>
+> Do not expose `:8000` to the open internet without auth.
+
+### Running locally
+
+**Using uvx:**
+
+```bash
+HA_URL=http://homeassistant.local:8123 \
+HA_TOKEN=YOUR_LONG_LIVED_TOKEN \
+uvx hass-mcp --http --port 8000
+```
+
+The server binds `127.0.0.1` by default. Override with `--host 0.0.0.0` only when you've also configured auth in front of it.
+
+### Running in Docker
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e HA_URL=http://homeassistant.local:8123 \
+  -e HA_TOKEN=YOUR_LONG_LIVED_TOKEN \
+  voska/hass-mcp:latest --http --host 0.0.0.0 --port 8000
+```
+
+`--host 0.0.0.0` is required inside Docker so the port is reachable through the bridge. Bind the publish (`-p`) to `127.0.0.1:8000:8000` if you only want it reachable from the host, or put a reverse proxy in front.
+
+### Endpoint
+
+The MCP endpoint is at `/mcp`. Point your client at `http://<host>:<port>/mcp`.
+
+### Smithery / PaaS
+
+The server honors the `PORT` environment variable (Smithery's convention) in addition to `MCP_PORT`. Smithery deployment requires `--http` mode and reads `PORT` automatically.
+
 ## Usage Examples
 
 Here are some examples of prompts you can use with Claude once Hass-MCP is set up:
