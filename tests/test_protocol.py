@@ -126,10 +126,6 @@ async def test_all_prompts_use_valid_roles():
 
 
 @respx.mock
-@pytest.mark.xfail(
-    strict=True,
-    reason="call_service_tool returns the raw HA response (a list) instead of a dict",
-)
 async def test_call_service_tool_returns_dict_for_empty_list():
     """call_service_tool must yield a dict even when HA returns [] (e.g. automation.reload).
 

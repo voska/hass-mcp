@@ -889,16 +889,23 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
         data: Optional data to pass to the service (e.g., {'entity_id': 'light.living_room'})
     
     Returns:
-        The response from Home Assistant (usually empty for successful calls)
-    
+        A dictionary with success status, the domain/service called, and the
+        list of affected entity states returned by Home Assistant.
+
     Examples:
         domain='light', service='turn_on', data={'entity_id': 'light.x', 'brightness': 255}
         domain='automation', service='reload'
         domain='fan', service='set_percentage', data={'entity_id': 'fan.x', 'percentage': 50}
-    
+
     """
     logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
-    return await call_service(domain, service, data or {})
+    affected_entities = await call_service(domain, service, data or {})
+    return {
+        "success": True,
+        "domain": domain,
+        "service": service,
+        "affected_entities": affected_entities,
+    }
 
 # Prompt functionality
 @mcp.prompt()
