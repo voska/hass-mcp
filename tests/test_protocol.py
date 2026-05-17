@@ -178,3 +178,56 @@ async def test_get_entity_via_protocol():
         )
         assert not result.isError
         assert "on" in result.content[0].text
+
+
+@respx.mock
+async def test_get_error_log_uses_hassio_endpoint_on_ha_os():
+    """HA OS / Supervised exposes Core logs at /api/hassio/core/logs; the
+    standalone /api/error_log endpoint returns 404 there. get_error_log must
+    try the hassio endpoint first."""
+    import json
+
+    respx.get("http://localhost:8123/api/hassio/core/logs").mock(
+        return_value=httpx.Response(
+            200,
+            text="2026-05-16 12:00:00 ERROR (MainThread) [mqtt] connection lost\n"
+                 "2026-05-16 12:00:01 WARNING (MainThread) [zwave] retrying\n",
+        )
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool("get_error_log", arguments={})
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["error_count"] == 1
+        assert payload["warning_count"] == 1
+        assert payload["integration_mentions"]["mqtt"] == 1
+        assert payload["integration_mentions"]["zwave"] == 1
+
+
+@respx.mock
+async def test_get_error_log_falls_back_to_standalone_endpoint():
+    """When /api/hassio/core/logs is unavailable (standalone Home Assistant
+    install), get_error_log must fall back to /api/error_log."""
+    import json
+
+    respx.get("http://localhost:8123/api/hassio/core/logs").mock(
+        return_value=httpx.Response(404, text="Not Found")
+    )
+    # ANSI color codes are stripped from the parsed output and excluded from counts.
+    respx.get("http://localhost:8123/api/error_log").mock(
+        return_value=httpx.Response(
+            200,
+            text="\x1b[31mERROR\x1b[0m [homeassistant.components.light] failed\n",
+        )
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool("get_error_log", arguments={})
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert "\x1b[" not in payload["log_text"], "ANSI codes must be stripped"
+        assert payload["error_count"] == 1
+        assert payload["integration_mentions"]["light"] == 1
