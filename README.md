@@ -231,6 +231,8 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 - "Create an automation that turns on the lights at sunset"
 - "Help me troubleshoot why my bedroom motion sensor automation isn't working"
 - "Search for entities related to my living room"
+- "Show me the last 50 ERROR lines from the Home Assistant log"
+- "What's been failing on the mqtt integration today?"
 
 ## Available Tools
 
@@ -246,7 +248,9 @@ Hass-MCP provides several tools for interacting with Home Assistant:
 - `call_service_tool`: Call any Home Assistant service
 - `restart_ha`: Restart Home Assistant
 - `get_history`: Get the state history of an entity
-- `get_error_log`: Get the Home Assistant error log
+- `get_error_log`: Get the Home Assistant error log, with optional
+  `level` / `integration` / `search_term` / `lines` filters applied
+  server-side so noisy logs don't blow Claude's context
 - `get_entities_by_area`: List entities in a specific area / room
 
 ## Prompts for Guided Conversations

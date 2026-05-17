@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `get_error_log` accepts optional filter parameters: `level`,
+  `integration`, `search_term`, and `lines`. Filters combine with AND
+  semantics and are applied server-side after ANSI stripping; the
+  returned `error_count`, `warning_count`, `integration_mentions`, and
+  `total_lines` are computed over the filtered output so they always
+  match what's returned. A new `filters_applied` field surfaces which
+  filters were active. Supersedes [#34] — ported fresh against current
+  master with thanks to @cstosgale for the original implementation.
+
 ## [0.4.1] - 2026-05-17
 
 ### Added
@@ -132,4 +142,5 @@ Initial PyPI release.
 [#28]: https://github.com/voska/hass-mcp/issues/28
 [#29]: https://github.com/voska/hass-mcp/issues/29
 [#33]: https://github.com/voska/hass-mcp/pull/33
+[#34]: https://github.com/voska/hass-mcp/pull/34
 [#35]: https://github.com/voska/hass-mcp/issues/35
