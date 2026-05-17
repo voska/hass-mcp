@@ -487,43 +487,93 @@ async def restart_home_assistant() -> Dict[str, Any]:
     return await call_service("homeassistant", "restart", {})
 
 @handle_api_errors
-async def get_hass_error_log() -> Dict[str, Any]:
+async def get_hass_error_log(
+    level: Optional[str] = None,
+    integration: Optional[str] = None,
+    search_term: Optional[str] = None,
+    lines: Optional[int] = None,
+) -> Dict[str, Any]:
     """
-    Get the Home Assistant error log for troubleshooting
-    
+    Get the Home Assistant error log for troubleshooting.
+
+    All filters are optional and combine (AND semantics). Filtering happens
+    client-side after the full log is fetched from HA; stats (counts,
+    integration mentions, total_lines) are computed over the filtered text
+    so they match what's returned.
+
+    Args:
+        level: Filter to lines containing this log level (ERROR, WARNING,
+               INFO, DEBUG). Case-insensitive.
+        integration: Filter to lines mentioning this integration. Matches
+                     `[name]` or `[homeassistant.components.name]`.
+                     Case-insensitive.
+        search_term: Case-insensitive substring filter applied to each line.
+        lines: Return only the most recent N lines (after other filters).
+
     Returns:
         A dictionary containing:
-        - log_text: The full error log text
-        - error_count: Number of ERROR entries found
-        - warning_count: Number of WARNING entries found
-        - integration_mentions: Map of integration names to mention counts
-        - error: Error message if retrieval failed
+        - log_text: The filtered log text (ANSI codes stripped)
+        - error_count: ERROR entries in the filtered text
+        - warning_count: WARNING entries in the filtered text
+        - integration_mentions: Map of integration names to counts
+        - total_lines: Total lines returned
+        - filters_applied: Echo of which filters were active
+        - error: Set only on retrieval failure
     """
     import re
 
     ansi_pattern = re.compile(r'\x1b\[[0-9;]*m')
 
+    def apply_filters(text: str) -> str:
+        log_lines = text.splitlines()
+        if level:
+            needle = level.upper()
+            log_lines = [ln for ln in log_lines if needle in ln]
+        if integration:
+            needle = integration.lower()
+            bare = f"[{needle}]"
+            namespaced = f"[homeassistant.components.{needle}]"
+            log_lines = [ln for ln in log_lines if bare in ln.lower() or namespaced in ln.lower()]
+        if search_term:
+            needle = search_term.lower()
+            log_lines = [ln for ln in log_lines if needle in ln.lower()]
+        if lines is not None and lines > 0:
+            log_lines = log_lines[-lines:]
+        return "\n".join(log_lines)
+
     def parse_log_text(log_text: str) -> Dict[str, Any]:
         # HA OS logs include ANSI color codes that distort ERROR/WARNING counts
         # and contaminate the returned text.
         clean_text = ansi_pattern.sub('', log_text)
+        # Filtering happens after ANSI stripping so substring matches aren't
+        # disrupted by escape sequences.
+        filtered = apply_filters(clean_text)
 
-        error_count = clean_text.count("ERROR")
-        warning_count = clean_text.count("WARNING")
+        error_count = filtered.count("ERROR")
+        warning_count = filtered.count("WARNING")
 
         integration_mentions: Dict[str, int] = {}
-        for match in re.finditer(r'\[([a-zA-Z0-9_\.]+)\]', clean_text):
-            integration = match.group(1).lower()
+        for match in re.finditer(r'\[([a-zA-Z0-9_\.]+)\]', filtered):
+            name = match.group(1).lower()
             # Collapse homeassistant.components.X to X
-            if integration.startswith('homeassistant.components.'):
-                integration = integration.split('.')[-1]
-            integration_mentions[integration] = integration_mentions.get(integration, 0) + 1
+            if name.startswith('homeassistant.components.'):
+                name = name.split('.')[-1]
+            integration_mentions[name] = integration_mentions.get(name, 0) + 1
+
+        filters_applied = {
+            k: v for k, v in {
+                "level": level, "integration": integration,
+                "search_term": search_term, "lines": lines,
+            }.items() if v is not None
+        }
 
         return {
-            "log_text": clean_text,
+            "log_text": filtered,
             "error_count": error_count,
             "warning_count": warning_count,
             "integration_mentions": integration_mentions,
+            "total_lines": len(filtered.splitlines()) if filtered else 0,
+            "filters_applied": filters_applied,
         }
 
     try:

@@ -1273,25 +1273,62 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
 
 @mcp.tool()
 @async_handler("get_error_log")
-async def get_error_log() -> Dict[str, Any]:
+async def get_error_log(
+    level: Optional[str] = None,
+    integration: Optional[str] = None,
+    search_term: Optional[str] = None,
+    lines: Optional[int] = None,
+) -> Dict[str, Any]:
     """
-    Get the Home Assistant error log for troubleshooting
-    
+    Get the Home Assistant error log for troubleshooting.
+
+    All filters are optional and combine (AND semantics). Stats
+    (error_count, warning_count, integration_mentions, total_lines) are
+    computed over the filtered output so they match what's returned.
+
+    Args:
+        level: Filter to lines containing this log level — ERROR, WARNING,
+               INFO, or DEBUG. Case-insensitive.
+        integration: Filter to lines mentioning this integration. Matches
+                     `[name]` or `[homeassistant.components.name]`.
+                     Case-insensitive.
+        search_term: Case-insensitive substring filter applied per line.
+                     Useful for entity IDs, exception names, etc.
+        lines: Return only the most recent N lines (applied after other
+               filters). Useful when you only care about the tail.
+
     Returns:
         A dictionary containing:
-        - log_text: The full error log text
-        - error_count: Number of ERROR entries found
-        - warning_count: Number of WARNING entries found
+        - log_text: The (possibly filtered) error log text
+        - error_count: Number of ERROR entries in the filtered output
+        - warning_count: Number of WARNING entries in the filtered output
         - integration_mentions: Map of integration names to mention counts
+        - total_lines: Number of lines in the filtered output
+        - filters_applied: Map of which filter args were supplied
         - error: Error message if retrieval failed
-        
+
     Examples:
-        Returns errors, warnings count and integration mentions
+        get_error_log()                                 # full log
+        get_error_log(level="ERROR")                    # errors only
+        get_error_log(integration="zwave_js")           # one integration
+        get_error_log(search_term="light.kitchen")      # specific entity
+        get_error_log(level="ERROR", lines=50)          # last 50 errors
+
     Best Practices:
-        - Use this tool when troubleshooting specific Home Assistant errors
-        - Look for patterns in repeated errors
-        - Pay attention to timestamps to correlate errors with events
-        - Focus on integrations with many mentions in the log    
+        - Filter on the server side (here) rather than pulling the full
+          log into Claude's context — saves tokens on noisy logs.
+        - Combine `integration` + `level="ERROR"` to triage a single
+          integration that's misbehaving.
+        - Use `lines` to bound output when scanning a long-running HA.
     """
-    logger.info("Getting Home Assistant error log")
-    return await get_hass_error_log()
+    logger.info(
+        "Getting Home Assistant error log "
+        f"(level={level}, integration={integration}, "
+        f"search_term={search_term}, lines={lines})"
+    )
+    return await get_hass_error_log(
+        level=level,
+        integration=integration,
+        search_term=search_term,
+        lines=lines,
+    )

@@ -371,3 +371,159 @@ async def test_get_error_log_falls_back_to_standalone_endpoint():
         assert "\x1b[" not in payload["log_text"], "ANSI codes must be stripped"
         assert payload["error_count"] == 1
         assert payload["integration_mentions"]["light"] == 1
+
+
+# --- Filter tests (#34) -----------------------------------------------------
+
+# Realistic sample log: mix of levels, integrations (bare + namespaced),
+# entity IDs to grep, and enough lines to test `lines` truncation.
+SAMPLE_LOG = (
+    "2026-05-16 12:00:00 INFO (MainThread) [homeassistant.core] starting up\n"
+    "2026-05-16 12:00:01 ERROR (MainThread) [homeassistant.components.mqtt] connection refused\n"
+    "2026-05-16 12:00:02 WARNING (MainThread) [zwave_js] node 5 retrying\n"
+    "2026-05-16 12:00:03 ERROR (MainThread) [homeassistant.components.zwave_js] command timeout on light.kitchen\n"
+    "2026-05-16 12:00:04 INFO (MainThread) [homeassistant.components.light] turning on light.living_room\n"
+    "2026-05-16 12:00:05 ERROR (MainThread) [homeassistant.components.mqtt] reconnect failed\n"
+    "2026-05-16 12:00:06 WARNING (MainThread) [homeassistant.components.light] light.kitchen unavailable\n"
+)
+
+
+def _mock_hassio_log(text: str = SAMPLE_LOG):
+    respx.get("http://localhost:8123/api/hassio/core/logs").mock(
+        return_value=httpx.Response(200, text=text)
+    )
+
+
+@respx.mock
+async def test_get_error_log_filter_by_level():
+    """level=ERROR keeps only ERROR lines and recomputes counts."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log", arguments={"level": "ERROR"}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["error_count"] == 3
+        assert payload["warning_count"] == 0
+        assert payload["total_lines"] == 3
+        assert "WARNING" not in payload["log_text"]
+        assert "INFO" not in payload["log_text"]
+        assert payload["filters_applied"] == {"level": "ERROR"}
+
+
+@respx.mock
+async def test_get_error_log_filter_by_integration_namespaced():
+    """integration=mqtt matches [homeassistant.components.mqtt]."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log", arguments={"integration": "mqtt"}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["total_lines"] == 2
+        assert payload["error_count"] == 2
+        assert "zwave" not in payload["log_text"].lower()
+
+
+@respx.mock
+async def test_get_error_log_filter_by_integration_bare():
+    """integration=zwave_js also matches the bare `[zwave_js]` form."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log", arguments={"integration": "zwave_js"}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        # Both `[zwave_js]` (bare) and `[homeassistant.components.zwave_js]`.
+        assert payload["total_lines"] == 2
+
+
+@respx.mock
+async def test_get_error_log_filter_by_search_term():
+    """search_term matches a substring, case-insensitive."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log", arguments={"search_term": "light.kitchen"}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["total_lines"] == 2
+        assert all(
+            "light.kitchen" in line.lower()
+            for line in payload["log_text"].splitlines()
+        )
+
+
+@respx.mock
+async def test_get_error_log_filter_by_lines_returns_tail():
+    """lines=N returns only the last N lines after other filters."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log", arguments={"lines": 2}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["total_lines"] == 2
+        # The last two lines of SAMPLE_LOG.
+        assert "reconnect failed" in payload["log_text"]
+        assert "light.kitchen unavailable" in payload["log_text"]
+
+
+@respx.mock
+async def test_get_error_log_filters_combine_and_stats_match_filtered():
+    """Combined filters AND together; stats are computed over filtered text."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_error_log",
+            arguments={"level": "ERROR", "integration": "mqtt"},
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["total_lines"] == 2
+        assert payload["error_count"] == 2
+        # integration_mentions should reflect mqtt-only output.
+        assert payload["integration_mentions"].get("mqtt") == 2
+        assert "zwave_js" not in payload["integration_mentions"]
+        assert payload["filters_applied"] == {
+            "level": "ERROR",
+            "integration": "mqtt",
+        }
+
+
+@respx.mock
+async def test_get_error_log_no_filters_applied_field_empty():
+    """With no filters, filters_applied is an empty dict (not missing)."""
+    import json
+    _mock_hassio_log()
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool("get_error_log", arguments={})
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["filters_applied"] == {}
+        assert payload["total_lines"] == 7
