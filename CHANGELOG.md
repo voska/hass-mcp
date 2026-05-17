@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-17
+
 ### Added
 - Per-entity `area` field on `get_entity`, `list_entities`,
   `search_entities_tool`, and `system_overview`. Areas are resolved
@@ -102,7 +104,8 @@ functional changes.
 
 Initial PyPI release.
 
-[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/voska/hass-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/voska/hass-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/voska/hass-mcp/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/voska/hass-mcp/compare/v0.1.2...v0.1.3
