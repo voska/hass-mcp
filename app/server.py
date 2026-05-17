@@ -25,10 +25,26 @@ from app.hass import (
 T = TypeVar('T')
 
 # Create an MCP server
+import os
+
 from mcp.server.fastmcp import FastMCP, Context, Image
-from mcp.server.stdio import stdio_server
 import mcp.types as types
-mcp = FastMCP("Hass-MCP")
+
+# When MCP_TRANSPORT is "streamable-http", configure for stateless operation
+# so the server works behind load balancers and on hosts like Smithery that
+# scale horizontally. Stateful mode is still the right default for local stdio.
+_http_mode = os.environ.get("MCP_TRANSPORT") == "streamable-http"
+
+mcp = FastMCP(
+    "Hass-MCP",
+    # Bind localhost by default. Override with MCP_HOST when running in Docker
+    # or behind a reverse proxy. PORT (without prefix) is honored for Smithery
+    # and other PaaS conventions.
+    host=os.environ.get("MCP_HOST", "127.0.0.1"),
+    port=int(os.environ.get("PORT", os.environ.get("MCP_PORT", "8000"))),
+    stateless_http=_http_mode,
+    json_response=_http_mode,
+)
 
 def async_handler(command_type: str):
     """
