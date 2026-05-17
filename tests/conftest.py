@@ -1,4 +1,12 @@
 import os
+
+# Set test env vars BEFORE any app.* module is imported. `app.config` captures
+# HA_URL/HA_TOKEN at import time into module globals — fixtures that patch
+# os.environ later cannot affect those captured values. conftest.py is loaded
+# by pytest before any test module, so this is the earliest reliable point.
+os.environ["HA_URL"] = "http://localhost:8123"
+os.environ["HA_TOKEN"] = "mock_token_for_tests"
+
 import sys
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
