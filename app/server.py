@@ -943,7 +943,7 @@ You'll guide the user through creating an automation with the following steps:
     
     # Return the conversation starter messages
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -972,7 +972,7 @@ You'll help the user diagnose problems with their automation by checking:
     user_message = f"My automation {automation_id} isn't working properly. Can you help me troubleshoot it?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -1002,7 +1002,7 @@ You'll help the user diagnose problems with their entity by checking:
     user_message = f"My entity {entity_id} isn't working properly. Can you help me troubleshoot it?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -1030,7 +1030,7 @@ You'll help the user analyze their usage patterns and create optimized routines 
     user_message = "I'd like to optimize my home automations based on my actual usage patterns. Can you help analyze how I use my smart home and suggest better routines?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -1059,7 +1059,7 @@ You'll help the user perform a comprehensive audit of their automations by:
     user_message = "I'd like to do a health check on all my Home Assistant automations. Can you help me review them for conflicts, redundancies, and potential improvements?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -1087,7 +1087,7 @@ You'll help the user audit and improve their entity naming by:
     user_message = "I'd like to make my Home Assistant entity names more consistent and organized. Can you help me audit my current naming conventions and suggest improvements?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
@@ -1116,7 +1116,7 @@ You'll help the user create optimized dashboards by:
     user_message = "I'd like to redesign my Home Assistant dashboards to be more functional and user-friendly. Can you help me create optimized layouts based on how I actually use my system?"
     
     return [
-        {"role": "system", "content": system_message},
+        {"role": "user", "content": system_message},
         {"role": "user", "content": user_message}
     ]
 
