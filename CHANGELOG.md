@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Long-term statistics + date-range history tools. `get_statistics` /
+  `get_statistics_range` hit HA's `recorder/statistics_during_period`
+  over a new WebSocket client (`app/ws.py`), returning aggregated
+  buckets (mean / min / max) that survive the recorder's short-term
+  retention window — the right call for monthly / yearly trends or for
+  high-frequency sensors where raw history is too verbose.
+  `get_history_range` adds an explicit-window variant of the existing
+  REST history tool. New dependency: `websockets>=13`. Supersedes
+  [#30] — ported as a focused subset (statistics + history range only;
+  automation traces and config validation deferred) with thanks to
+  @rmaher001 for the original implementation.
 - `get_error_log` accepts optional filter parameters: `level`,
   `integration`, `search_term`, and `lines`. Filters combine with AND
   semantics and are applied server-side after ANSI stripping; the
@@ -141,6 +152,7 @@ Initial PyPI release.
 [#23]: https://github.com/voska/hass-mcp/issues/23
 [#28]: https://github.com/voska/hass-mcp/issues/28
 [#29]: https://github.com/voska/hass-mcp/issues/29
+[#30]: https://github.com/voska/hass-mcp/pull/30
 [#33]: https://github.com/voska/hass-mcp/pull/33
 [#34]: https://github.com/voska/hass-mcp/pull/34
 [#35]: https://github.com/voska/hass-mcp/issues/35

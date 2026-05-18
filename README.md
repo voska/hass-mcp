@@ -233,6 +233,8 @@ Here are some examples of prompts you can use with Claude once Hass-MCP is set u
 - "Search for entities related to my living room"
 - "Show me the last 50 ERROR lines from the Home Assistant log"
 - "What's been failing on the mqtt integration today?"
+- "Show me power usage by day for the last month"
+- "What happened with the front door sensor last Tuesday?"
 
 ## Available Tools
 
@@ -247,7 +249,14 @@ Hass-MCP provides several tools for interacting with Home Assistant:
 - `list_automations`: Get a list of all automations
 - `call_service_tool`: Call any Home Assistant service
 - `restart_ha`: Restart Home Assistant
-- `get_history`: Get the state history of an entity
+- `get_history`: Get the state history of an entity (last N hours)
+- `get_history_range`: Get state-change history for an entity over an
+  explicit date/time range (`start_time` / `end_time`, ISO-8601)
+- `get_statistics`: Get long-term aggregated statistics (mean / min / max
+  per bucket) for an entity over the last N hours — works for data older
+  than the recorder's short-term retention window
+- `get_statistics_range`: Same, but for an explicit date/time range —
+  useful for monthly / yearly trend queries
 - `get_error_log`: Get the Home Assistant error log, with optional
   `level` / `integration` / `search_term` / `lines` filters applied
   server-side so noisy logs don't blow Claude's context
