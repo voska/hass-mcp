@@ -24,6 +24,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+from tests.test_transports import EXPECTED_TOOLS
+
 
 pytestmark = [
     pytest.mark.anyio,
@@ -129,7 +131,7 @@ async def test_docker_stdio_transport(docker_image):
             init = await session.initialize()
             assert init.serverInfo.name == "Hass-MCP"
             tools = await session.list_tools()
-            assert len(tools.tools) == 13
+            assert {t.name for t in tools.tools} == EXPECTED_TOOLS
             prompts = await session.list_prompts()
             assert len(prompts.prompts) == 7
 
@@ -163,7 +165,7 @@ async def test_docker_streamable_http_transport(docker_image):
                 init = await session.initialize()
                 assert init.serverInfo.name == "Hass-MCP"
                 tools = await session.list_tools()
-                assert len(tools.tools) == 13
+                assert {t.name for t in tools.tools} == EXPECTED_TOOLS
 
                 result = await session.call_tool("get_version", {})
                 assert not result.isError
