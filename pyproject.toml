@@ -12,6 +12,7 @@ dependencies = [
     "mcp[cli]>=1.27,<2",
     "httpx>=0.27.0",
     "truststore>=0.10",
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]

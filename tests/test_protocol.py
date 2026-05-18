@@ -13,6 +13,8 @@ runs inside an anyio task group, which conflicts with pytest-asyncio's task
 boundary across fixture setup and test body.
 """
 
+from typing import Any, Dict
+
 import pytest
 import respx
 import httpx
@@ -66,6 +68,9 @@ EXPECTED_TOOLS = {
     "get_entity",
     "get_error_log",
     "get_history",
+    "get_history_range",
+    "get_statistics",
+    "get_statistics_range",
     "get_version",
     "list_automations",
     "list_entities",
@@ -527,3 +532,177 @@ async def test_get_error_log_no_filters_applied_field_empty():
         payload = json.loads(result.content[0].text)
         assert payload["filters_applied"] == {}
         assert payload["total_lines"] == 7
+
+
+# --- History range + statistics tests (#30) ---------------------------------
+
+@respx.mock
+async def test_get_history_range_passes_window_to_ha():
+    """get_history_range hits /api/history/period/<start> with end_time set,
+    flattens HA's list-of-lists response, and reports first/last_changed."""
+    import json
+    history_payload = [[
+        {"state": "on",  "last_changed": "2026-05-15T08:00:00+00:00"},
+        {"state": "off", "last_changed": "2026-05-15T12:30:00+00:00"},
+        {"state": "on",  "last_changed": "2026-05-15T18:00:00+00:00"},
+    ]]
+    route = respx.get(
+        "http://localhost:8123/api/history/period/2026-05-15T00:00:00Z"
+    ).mock(return_value=httpx.Response(200, json=history_payload))
+
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_history_range",
+            arguments={
+                "entity_id": "light.kitchen",
+                "start_time": "2026-05-15T00:00:00Z",
+                "end_time": "2026-05-16T00:00:00Z",
+            },
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["entity_id"] == "light.kitchen"
+        assert payload["count"] == 3
+        assert payload["first_changed"] == "2026-05-15T08:00:00+00:00"
+        assert payload["last_changed"] == "2026-05-15T18:00:00+00:00"
+        # HA received our window as query params.
+        assert route.called
+        req = route.calls[0].request
+        assert req.url.params["filter_entity_id"] == "light.kitchen"
+        assert req.url.params["end_time"] == "2026-05-16T00:00:00Z"
+
+
+@respx.mock
+async def test_get_history_range_rejects_bad_window():
+    """start_time >= end_time surfaces as a tool-level error, not a crash."""
+    import json
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_history_range",
+            arguments={
+                "entity_id": "light.kitchen",
+                "start_time": "2026-05-16T00:00:00Z",
+                "end_time": "2026-05-15T00:00:00Z",
+            },
+        )
+        assert not result.isError, "validation errors return as payloads"
+        payload = json.loads(result.content[0].text)
+        assert "error" in payload
+        assert "before end_time" in payload["error"]
+
+
+# WebSocket-backed tools (statistics) are mocked at the `call_ws` boundary
+# rather than spinning up a real WebSocket server — same approach the MCP
+# SDK uses for its own protocol tests. This keeps statistics tests fast
+# and deterministic; the wire-level WS auth handshake is covered by
+# tests/test_ws.py.
+
+async def test_get_statistics_calls_recorder_period(monkeypatch):
+    """get_statistics sends recorder/statistics_during_period over WS and
+    returns the flattened list for the requested entity."""
+    import json
+    calls: list = []
+
+    async def fake_call_ws(message_type, **payload):
+        calls.append((message_type, payload))
+        return {
+            "sensor.power": [
+                {"start": "2026-05-16T00:00:00+00:00",
+                 "end":   "2026-05-16T01:00:00+00:00",
+                 "mean": 450.0, "min": 100.0, "max": 1200.0},
+                {"start": "2026-05-16T01:00:00+00:00",
+                 "end":   "2026-05-16T02:00:00+00:00",
+                 "mean": 520.0, "min": 200.0, "max": 1500.0},
+            ]
+        }
+
+    monkeypatch.setattr("app.hass.call_ws", fake_call_ws, raising=False)
+    # The function imports `call_ws` lazily inside the body, so also patch
+    # the source so the import resolves to our fake.
+    monkeypatch.setattr("app.ws.call_ws", fake_call_ws)
+
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_statistics",
+            arguments={"entity_id": "sensor.power", "hours": 2, "period": "hour"},
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["entity_id"] == "sensor.power"
+        assert payload["period"] == "hour"
+        assert len(payload["statistics"]) == 2
+        assert payload["statistics"][0]["mean"] == 450.0
+
+    assert len(calls) == 1
+    msg_type, kw = calls[0]
+    assert msg_type == "recorder/statistics_during_period"
+    assert kw["statistic_ids"] == ["sensor.power"]
+    assert kw["period"] == "hour"
+
+
+async def test_get_statistics_range_validates_period(monkeypatch):
+    """An invalid period surfaces as a tool-level error, no WS call made."""
+    import json
+    called = False
+
+    async def fake_call_ws(*a, **kw):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr("app.ws.call_ws", fake_call_ws)
+
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_statistics_range",
+            arguments={
+                "entity_id": "sensor.power",
+                "start_time": "2026-05-15T00:00:00Z",
+                "end_time": "2026-05-16T00:00:00Z",
+                "period": "fortnight",
+            },
+        )
+        payload = json.loads(result.content[0].text)
+        assert "error" in payload
+        assert "period" in payload["error"]
+        assert not called, "WS must not be hit when validation fails"
+
+
+async def test_get_statistics_range_passes_explicit_window(monkeypatch):
+    """get_statistics_range forwards user-supplied start/end exactly."""
+    import json
+    captured: Dict[str, Any] = {}
+
+    async def fake_call_ws(message_type, **payload):
+        captured["payload"] = payload
+        return {"sensor.energy": []}
+
+    monkeypatch.setattr("app.ws.call_ws", fake_call_ws)
+
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "get_statistics_range",
+            arguments={
+                "entity_id": "sensor.energy",
+                "start_time": "2026-01-01T00:00:00Z",
+                "end_time": "2026-02-01T00:00:00Z",
+                "period": "day",
+            },
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        assert payload["statistics"] == []
+
+    assert captured["payload"]["start_time"] == "2026-01-01T00:00:00Z"
+    assert captured["payload"]["end_time"] == "2026-02-01T00:00:00Z"
+    assert captured["payload"]["period"] == "day"

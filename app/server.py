@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 from app.hass import (
     get_hass_version, get_entity_state, call_service, get_entities,
-    get_automations, restart_home_assistant, 
+    get_automations, restart_home_assistant,
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
-    get_hass_error_log, get_entity_history
+    get_hass_error_log, get_entity_history, get_entity_history_range,
+    get_entity_statistics, get_entity_statistics_range,
 )
 
 # Type variable for generic functions
@@ -1270,6 +1271,165 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
             "states": [],
             "count": 0
         }
+
+
+def _flatten_history(history_data: Any, entity_id: str) -> Dict[str, Any]:
+    """Shared formatter for get_history / get_history_range."""
+    if isinstance(history_data, dict) and "error" in history_data:
+        return {
+            "entity_id": entity_id,
+            "error": history_data["error"],
+            "states": [],
+            "count": 0,
+        }
+    states: List[Dict[str, Any]] = []
+    if history_data and isinstance(history_data, list):
+        for state_list in history_data:
+            states.extend(state_list)
+    if not states:
+        return {
+            "entity_id": entity_id,
+            "states": [],
+            "count": 0,
+            "first_changed": None,
+            "last_changed": None,
+            "note": "No state changes found in the specified timeframe.",
+        }
+    states.sort(key=lambda x: x.get("last_changed", ""))
+    return {
+        "entity_id": entity_id,
+        "states": states,
+        "count": len(states),
+        "first_changed": states[0].get("last_changed"),
+        "last_changed": states[-1].get("last_changed"),
+    }
+
+
+@mcp.tool()
+@async_handler("get_history_range")
+async def get_history_range(
+    entity_id: str,
+    start_time: str,
+    end_time: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get raw state-change history for an entity over a date/time range.
+
+    Like `get_history`, but takes an explicit window instead of "N hours
+    from now". Useful for inspecting what happened on a specific day or
+    correlating with an external event.
+
+    Args:
+        entity_id: The entity to fetch history for.
+        start_time: ISO-8601 start (e.g. `2026-05-15` or
+                    `2026-05-15T08:00:00Z`). Treated as UTC if no offset.
+        end_time: ISO-8601 end. Defaults to now (UTC).
+
+    Returns:
+        Same shape as `get_history`: `entity_id`, `states`, `count`,
+        `first_changed`, `last_changed`.
+
+    Examples:
+        get_history_range("light.kitchen", "2026-05-15")
+        get_history_range("sensor.power", "2026-05-15T00:00:00Z", "2026-05-16T00:00:00Z")
+
+    Best Practices:
+        - Bound the window — wider ranges return more data and more tokens.
+        - For aggregated long-term data, prefer `get_statistics_range`.
+    """
+    logger.info(
+        f"Getting history range for {entity_id}: {start_time} -> {end_time or 'now'}"
+    )
+    try:
+        history_data = await get_entity_history_range(entity_id, start_time, end_time)
+    except ValueError as e:
+        return {"entity_id": entity_id, "error": str(e), "states": [], "count": 0}
+    return _flatten_history(history_data, entity_id)
+
+
+@mcp.tool()
+@async_handler("get_statistics")
+async def get_statistics(
+    entity_id: str,
+    hours: int = 24,
+    period: str = "hour",
+) -> Dict[str, Any]:
+    """
+    Get long-term aggregated statistics for an entity over the last N hours.
+
+    Uses HA's recorder statistics (over WebSocket) — aggregated buckets
+    (mean / min / max per period) that survive the short-term retention
+    window. Use this instead of `get_history` when:
+        - You want data older than the recorder's default 10-day window.
+        - You want aggregated values rather than every individual change.
+        - The entity is a high-frequency sensor (temperature, power) and
+          raw history would be too many tokens.
+
+    Args:
+        entity_id: The entity (must have a `state_class` HA records as
+                   statistics — `measurement`, `total`, `total_increasing`).
+        hours: How far back from now. Defaults to 24.
+        period: Bucket size — `5minute`, `hour`, `day`, `week`, `month`.
+                Defaults to `hour`.
+
+    Returns:
+        `entity_id`, `period`, `start_time`, `end_time`, `statistics`
+        (list of `{start, end, mean, min, max, ...}` points).
+
+    Examples:
+        get_statistics("sensor.power_usage", hours=168, period="day")
+        get_statistics("sensor.temperature", hours=24)
+    """
+    logger.info(
+        f"Getting statistics for {entity_id}: last {hours}h, period={period}"
+    )
+    try:
+        return await get_entity_statistics(entity_id, hours=hours, period=period)
+    except ValueError as e:
+        return {"entity_id": entity_id, "error": str(e), "statistics": []}
+
+
+@mcp.tool()
+@async_handler("get_statistics_range")
+async def get_statistics_range(
+    entity_id: str,
+    start_time: str,
+    end_time: Optional[str] = None,
+    period: str = "hour",
+) -> Dict[str, Any]:
+    """
+    Get long-term aggregated statistics for an entity over a date/time range.
+
+    Same data source as `get_statistics`, but with an explicit window —
+    useful for "what was my power usage from Jan 1 to Jan 31?" type
+    questions. Aggregated bucket data survives the short-term retention
+    window, so this works for data months/years old.
+
+    Args:
+        entity_id: The entity (must be statistics-tracked).
+        start_time: ISO-8601 start (`2026-01-01` or
+                    `2026-01-01T00:00:00Z`). UTC if no offset.
+        end_time: ISO-8601 end. Defaults to now.
+        period: `5minute`, `hour`, `day`, `week`, or `month`.
+
+    Returns:
+        `entity_id`, `period`, `start_time`, `end_time`, `statistics`.
+
+    Examples:
+        get_statistics_range("sensor.energy", "2026-01-01", "2026-02-01", period="day")
+        get_statistics_range("sensor.temperature", "2026-05-01", period="hour")
+    """
+    logger.info(
+        f"Getting statistics range for {entity_id}: "
+        f"{start_time} -> {end_time or 'now'}, period={period}"
+    )
+    try:
+        return await get_entity_statistics_range(
+            entity_id, start_time, end_time, period=period
+        )
+    except ValueError as e:
+        return {"entity_id": entity_id, "error": str(e), "statistics": []}
+
 
 @mcp.tool()
 @async_handler("get_error_log")

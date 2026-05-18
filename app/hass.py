@@ -652,6 +652,145 @@ async def get_entity_history(entity_id: str, hours: int) -> List[Dict[str, Any]]
     # Return the JSON response
     return response.json()
 
+
+def _parse_iso_dt(value: Union[str, datetime]) -> datetime:
+    """Coerce a user-supplied datetime to a tz-aware UTC datetime.
+
+    Accepts a `datetime` (assumed UTC if naive) or an ISO-8601 string
+    (`2026-01-15`, `2026-01-15T12:00:00`, `2026-01-15T12:00:00Z`, or with
+    explicit offset). Raises ValueError on anything else.
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        raise ValueError(f"datetime must be str or datetime, got {type(value).__name__}")
+    s = value.strip()
+    # `fromisoformat` in 3.11+ accepts `Z`, but be explicit for clarity.
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+@handle_api_errors
+async def get_entity_history_range(
+    entity_id: str,
+    start_time: Union[str, datetime],
+    end_time: Optional[Union[str, datetime]] = None,
+) -> List[Dict[str, Any]]:
+    """Get state-change history for an entity within a date/time range.
+
+    Uses HA's REST history endpoint (raw state changes, not aggregated).
+    Useful when you want exact state transitions over a specific window —
+    e.g. "what did the front door do last Tuesday?" — without being
+    boxed in to N hours back from "now".
+
+    Args:
+        entity_id: The entity to fetch history for.
+        start_time: ISO-8601 string or datetime. Treated as UTC if naive.
+        end_time: ISO-8601 string or datetime. Defaults to now (UTC).
+
+    Returns:
+        A list of state-change buckets exactly as HA returns them
+        (`/api/history/period/...` shape).
+    """
+    start_dt = _parse_iso_dt(start_time)
+    end_dt = _parse_iso_dt(end_time) if end_time is not None else datetime.now(timezone.utc)
+    if start_dt >= end_dt:
+        raise ValueError("start_time must be before end_time")
+
+    client = await get_client()
+    url = f"{HA_URL}/api/history/period/{start_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    params = {
+        "filter_entity_id": entity_id,
+        "minimal_response": "true",
+        "end_time": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    response = await client.get(url, headers=get_ha_headers(), params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+_STATISTICS_PERIODS = {"5minute", "hour", "day", "week", "month"}
+
+
+@handle_api_errors
+async def get_entity_statistics_range(
+    entity_id: str,
+    start_time: Union[str, datetime],
+    end_time: Optional[Union[str, datetime]] = None,
+    period: str = "hour",
+) -> Dict[str, Any]:
+    """Get long-term statistics for an entity over a date/time range.
+
+    Hits HA's `recorder/statistics_during_period` over the WebSocket API.
+    Statistics survive the recorder's short-term retention window
+    (default 10 days), so this is the right call for anything older than
+    that or anything you want aggregated (mean / min / max per period).
+
+    Args:
+        entity_id: The entity (must have a `state_class` that HA records
+                   as statistics — e.g. `measurement`, `total_increasing`).
+        start_time: ISO-8601 string or datetime, UTC if naive.
+        end_time: ISO-8601 string or datetime, defaults to now.
+        period: Aggregation bucket — one of `5minute`, `hour`, `day`,
+                `week`, `month`. Defaults to `hour`.
+
+    Returns:
+        ``{"entity_id", "period", "start_time", "end_time", "statistics"}``.
+        ``statistics`` is the list HA returned (each entry has `start`,
+        `end`, `mean`, `min`, `max`, optionally `sum`/`state`).
+    """
+    if period not in _STATISTICS_PERIODS:
+        raise ValueError(
+            f"period must be one of {sorted(_STATISTICS_PERIODS)}, got {period!r}"
+        )
+    start_dt = _parse_iso_dt(start_time)
+    end_dt = _parse_iso_dt(end_time) if end_time is not None else datetime.now(timezone.utc)
+    if start_dt >= end_dt:
+        raise ValueError("start_time must be before end_time")
+
+    from app.ws import call_ws
+    start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    result = await call_ws(
+        "recorder/statistics_during_period",
+        start_time=start_iso,
+        end_time=end_iso,
+        statistic_ids=[entity_id],
+        period=period,
+    )
+    return {
+        "entity_id": entity_id,
+        "period": period,
+        "start_time": start_iso,
+        "end_time": end_iso,
+        # HA returns `{entity_id: [points...]}`; flatten to the list when
+        # we only asked for one entity.
+        "statistics": (result or {}).get(entity_id, []) if isinstance(result, dict) else result,
+    }
+
+
+async def get_entity_statistics(
+    entity_id: str,
+    hours: int = 24,
+    period: str = "hour",
+) -> Dict[str, Any]:
+    """Convenience wrapper: last N hours of statistics for an entity.
+
+    Args:
+        entity_id: The entity to fetch statistics for.
+        hours: How far back from now (UTC) to query. Defaults to 24.
+        period: Bucket size — `5minute`, `hour`, `day`, `week`, `month`.
+
+    Returns:
+        Same shape as `get_entity_statistics_range`.
+    """
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(hours=hours)
+    return await get_entity_statistics_range(entity_id, start_dt, end_dt, period)
+
+
 @handle_api_errors
 async def get_system_overview() -> Dict[str, Any]:
     """

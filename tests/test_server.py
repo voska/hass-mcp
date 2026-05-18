@@ -151,7 +151,10 @@ class TestMCPServer:
             "list_automations",
             "search_entities_tool", 
             "system_overview",
-            "get_error_log"
+            "get_error_log",
+            "get_history_range",
+            "get_statistics",
+            "get_statistics_range",
         ]
         
         # Check that each tool function has a proper docstring and exists
