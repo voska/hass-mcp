@@ -1,5 +1,7 @@
 # Hass-MCP
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fvoska%2Fhass-mcp.svg)](https://mcptoplist.com/server/glama%2Fvoska%2Fhass-mcp)
+
 A Model Context Protocol (MCP) server for Home Assistant integration with Claude and other LLMs.
 
 <a href="https://glama.ai/mcp/servers/@voska/hass-mcp">
