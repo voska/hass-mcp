@@ -32,10 +32,8 @@ from app import config
 
 logger = logging.getLogger(__name__)
 
-# Per-dashboard locks to serialize concurrent writes.
-# Key: canonicalized url_path — `None` (the default dashboard) maps to
-# "lovelace" when a "lovelace" dashboard exists, because HA resolves an
-# omitted url_path to it.
+# Per-dashboard locks to serialize concurrent writes. HA may resolve an
+# omitted url_path to "lovelace", so both selectors always share one key.
 _locks: Dict[str, asyncio.Lock] = {}
 
 # A `view` argument that selects an existing view: an integer index, or a
@@ -70,29 +68,9 @@ def _label(url_path: Optional[str]) -> str:
     return f"'{url_path}'" if url_path else "(default)"
 
 
-async def _canonical_lock_key(url_path: Optional[str]) -> str:
-    """Resolve a dashboard selector to its stable per-dashboard lock key.
-
-    Matches HA's own resolution (lovelace/websocket.py): an omitted
-    ``url_path`` addresses the ``"lovelace"`` dashboard when one exists, so
-    ``None`` and ``"lovelace"`` must share a lock — interleaved edits on the
-    same dashboard would otherwise silently overwrite each other. When no
-    "lovelace" dashboard exists the default keeps its own key."""
-    if url_path is not None:
-        return url_path
-    try:
-        dashboards = await call_ws("lovelace/dashboards/list")
-    except HassWebSocketError:
-        return "lovelace"
-    for d in dashboards or []:
-        if d.get("url_path") == "lovelace":
-            return "lovelace"
-    return "default"
-
-
-async def _lock_for(url_path: Optional[str]) -> asyncio.Lock:
+def _lock_for(url_path: Optional[str]) -> asyncio.Lock:
     """Return the per-dashboard lock for a dashboard selector."""
-    key = await _canonical_lock_key(url_path)
+    key = "lovelace" if url_path is None else url_path
     if key not in _locks:
         _locks[key] = asyncio.Lock()
     return _locks[key]
@@ -475,7 +453,7 @@ async def set_dashboard_config(
     preview, then backup-before-save. ⚠️ This replaces the ENTIRE dashboard
     config and is reflected live in every open browser. The prior config is
     backed up first (see `restore_dashboard`)."""
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         return await _set_dashboard_config_locked(url_path, config, dry_run=dry_run)
 
 
@@ -578,7 +556,7 @@ async def add_card(
     if card is None:
         raise LovelaceError("card is required.")
     _validate_card(card, "card")
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cards = _resolve_card_list(cfg["views"][vi], section, vi)
@@ -599,7 +577,7 @@ async def update_card(
     if card is None:
         raise LovelaceError("card is required.")
     _validate_card(card, "card")
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cards = _resolve_card_list(cfg["views"][vi], section, vi)
@@ -616,7 +594,7 @@ async def remove_card(
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     """Remove the card at `card_index` from `view` (or its `section`)."""
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cards = _resolve_card_list(cfg["views"][vi], section, vi)
@@ -634,7 +612,7 @@ async def move_card(
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     """Reorder a card within a view (or its `section`): `card_index` -> `new_index`."""
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cards = _resolve_card_list(cfg["views"][vi], section, vi)
@@ -683,7 +661,7 @@ async def add_view(
         raise LovelaceError(
             "view_config must be a dict describing the view (e.g. {'title': 'Garage'})."
         )
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         views = cfg["views"]
         idx = len(views) if position is None else _coerce_position(position, len(views))
@@ -697,7 +675,7 @@ async def remove_view(
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     """Remove the view selected by `view` (index, path, or title)."""
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cfg["views"].pop(vi)
@@ -718,7 +696,7 @@ async def update_view(
             "changes must be a dict of view properties to update "
             "(e.g. {'title': 'New Title'})."
         )
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         cfg = await _load_for_edit(url_path)
         vi = _resolve_view(cfg, view)
         cfg["views"][vi].update(changes)
@@ -767,7 +745,7 @@ async def restore_dashboard(
         cfg = json.load(f)
     # Backup files are immutable, so the read is safe outside the lock; the
     # save itself must serialize against concurrent edits.
-    async with await _lock_for(url_path):
+    async with _lock_for(url_path):
         result = await _set_dashboard_config_locked(url_path, cfg, dry_run=dry_run)
     result["restored_from"] = chosen["backup_id"]
     return result

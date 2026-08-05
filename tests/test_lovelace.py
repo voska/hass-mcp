@@ -670,7 +670,25 @@ async def test_default_alias_lovelace_shares_lock_key(fake_ws):
     fake_ws.dashboards.append(
         {"id": "lov", "url_path": "lovelace", "title": "Default", "mode": "storage"}
     )
-    assert await lovelace._lock_for(None) is await lovelace._lock_for("lovelace")
+    assert lovelace._lock_for(None) is lovelace._lock_for("lovelace")
+
+
+async def test_default_lock_key_is_stable_when_dashboard_list_fails(
+    fake_ws, monkeypatch
+):
+    """A transient mode lookup failure must not split the default dashboard
+    across two locks and reintroduce lost updates."""
+    first = lovelace._lock_for(None)
+
+    async def fail_dashboard_list(message_type, **payload):
+        if message_type == "lovelace/dashboards/list":
+            raise HassWebSocketError("transient dashboard list failure")
+        return await fake_ws(message_type, **payload)
+
+    monkeypatch.setattr("app.lovelace.call_ws", fail_dashboard_list)
+    second = lovelace._lock_for(None)
+
+    assert first is second
 
 
 async def test_interleaved_alias_edits_both_succeed(fake_ws):
@@ -698,7 +716,7 @@ async def test_raw_set_dashboard_config_takes_the_lock(fake_ws):
     save would otherwise be silently overwritten."""
     fake_ws.config_store[None] = {"views": [{"cards": [{"type": "orig"}]}]}
     raw_cfg = {"views": [{"cards": [{"type": "raw"}]}]}
-    lock = await lovelace._lock_for(None)
+    lock = lovelace._lock_for(None)
     async with lock:  # a concurrent high-level edit holds the lock...
         task = asyncio.create_task(lovelace.set_dashboard_config(None, raw_cfg))
         for _ in range(200):
@@ -719,7 +737,7 @@ async def test_restore_dashboard_takes_the_lock(fake_ws):
     await lovelace.add_card(None, view=0, card={"type": "markdown", "content": "1"})
     assert lovelace.list_dashboard_backups(None)
 
-    lock = await lovelace._lock_for(None)
+    lock = lovelace._lock_for(None)
     async with lock:
         task = asyncio.create_task(lovelace.restore_dashboard(None))
         for _ in range(200):

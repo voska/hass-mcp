@@ -63,8 +63,9 @@ class _FakeWebSocket:
 def _patch_connect(monkeypatch, fake: _FakeWebSocket) -> dict:
     """Replace `websockets.connect` so it yields our fake."""
     captured: dict = {}
+    not_provided = object()
 
-    def fake_connect(url, ssl=None, max_size=None):
+    def fake_connect(url, ssl=None, max_size=not_provided):
         captured["url"] = url
         captured["ssl"] = ssl
         captured["max_size"] = max_size
