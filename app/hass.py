@@ -919,3 +919,31 @@ async def get_system_overview() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error generating system overview: {str(e)}")
         return {"error": f"Error generating system overview: {str(e)}"}
+
+
+@handle_api_errors
+async def render_template(
+    template: str, variables: Optional[Dict[str, Any]] = None
+) -> str:
+    """Render a Jinja2 template through Home Assistant's template engine.
+
+    Returns:
+        The rendered output as a string. Template errors come back from HA as
+        a 400 with the Jinja message, which handle_api_errors surfaces.
+    """
+    client = await get_client()
+    payload: Dict[str, Any] = {"template": template}
+    if variables:
+        payload["variables"] = variables
+
+    response = await client.post(
+        f"{HA_URL}/api/template",
+        headers=get_ha_headers(),
+        json=payload,
+    )
+    if response.status_code == 400:
+        # HA returns the Jinja error itself here, which is far more useful
+        # than the generic "400 - Bad Request" the decorator would produce.
+        return f"Template error: {response.text.strip()}"
+    response.raise_for_status()
+    return response.text
