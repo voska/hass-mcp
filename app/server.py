@@ -1502,14 +1502,25 @@ You'll help the user create optimized dashboards by:
 # Documentation endpoint
 @mcp.tool()
 @async_handler("get_history")
-async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
+async def get_history(
+    entity_id: str,
+    hours: int = 24,
+    limit: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Get the history of an entity's state changes
-    
+
     Args:
         entity_id: The entity ID to get history for
         hours: Number of hours of history to retrieve (default: 24)
-    
+        limit: Max states to return. If the window holds more, they are
+               sampled evenly across it (the last state is always kept) and
+               `total_count`/`downsampled` are set. Defaults to unlimited.
+        attributes: Attribute keys to keep on each state. `[]` drops
+                    attributes entirely, which is usually the bulk of the
+                    payload. Defaults to keeping all of them.
+
     Returns:
         A dictionary containing:
         - entity_id: The entity ID requested
@@ -1524,54 +1535,17 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
     Best Practices:
         - Keep hours reasonable (24-72) for token efficiency
         - Use for entities with discrete state changes rather than continuously changing sensors
-        - Consider the state distribution rather than every individual state    
+        - Consider the state distribution rather than every individual state
+        - Use `limit` and `attributes` on chatty entities instead of shortening
+          the window, so you keep the full span at a fraction of the tokens
     """
     logger.info(f"Getting history for entity: {entity_id}, hours: {hours}")
-    
+
     try:
-        # Call the new hass function to get history
         history_data = await get_entity_history(entity_id, hours)
-        
-        # Check for errors from the API call
-        if isinstance(history_data, dict) and "error" in history_data:
-            return {
-                "entity_id": entity_id,
-                "error": history_data["error"],
-                "states": [],
-                "count": 0
-            }
-        
-        # The result from the API is a list of lists of state changes
-        # We need to flatten it and process it
-        states = []
-        if history_data and isinstance(history_data, list):
-            for state_list in history_data:
-                states.extend(state_list)
-        
-        if not states:
-            return {
-                "entity_id": entity_id,
-                "states": [],
-                "count": 0,
-                "first_changed": None,
-                "last_changed": None,
-                "note": "No state changes found in the specified timeframe."
-            }
-        
-        # Sort states by last_changed timestamp
-        states.sort(key=lambda x: x.get("last_changed", ""))
-        
-        # Extract first and last changed timestamps
-        first_changed = states[0].get("last_changed")
-        last_changed = states[-1].get("last_changed")
-        
-        return {
-            "entity_id": entity_id,
-            "states": states,
-            "count": len(states),
-            "first_changed": first_changed,
-            "last_changed": last_changed
-        }
+        return _flatten_history(
+            history_data, entity_id, limit=limit, attributes=attributes
+        )
     except Exception as e:
         logger.error(f"Error processing history for {entity_id}: {str(e)}")
         return {
@@ -1582,7 +1556,52 @@ async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
         }
 
 
-def _flatten_history(history_data: Any, entity_id: str) -> Dict[str, Any]:
+def _downsample(points: List[Any], limit: Optional[int]) -> List[Any]:
+    """Evenly thin a list down to at most `limit` items.
+
+    Truncating to the first N would silently hide the end of the window, which
+    is usually the interesting part. Sampling at a fixed stride keeps the shape
+    of the series and always preserves the final point.
+    """
+    if limit is None or limit <= 0 or len(points) <= limit:
+        return points
+    if limit == 1:
+        return [points[-1]]
+    stride = (len(points) - 1) / (limit - 1)
+    sampled = [points[round(i * stride)] for i in range(limit)]
+    sampled[-1] = points[-1]
+    return sampled
+
+
+def _trim_attributes(
+    states: List[Dict[str, Any]], attributes: Optional[List[str]]
+) -> List[Dict[str, Any]]:
+    """Keep only the requested attribute keys on each state.
+
+    History returns the entity's full attribute dict on every state, which for
+    something like a climate entity is most of the payload. `attributes=[]`
+    drops them entirely; `None` (the default) keeps everything.
+    """
+    if attributes is None:
+        return states
+    wanted = set(attributes)
+    return [
+        {
+            **state,
+            "attributes": {
+                k: v for k, v in (state.get("attributes") or {}).items() if k in wanted
+            },
+        }
+        for state in states
+    ]
+
+
+def _flatten_history(
+    history_data: Any,
+    entity_id: str,
+    limit: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """Shared formatter for get_history / get_history_range."""
     if isinstance(history_data, dict) and "error" in history_data:
         return {
@@ -1605,13 +1624,21 @@ def _flatten_history(history_data: Any, entity_id: str) -> Dict[str, Any]:
             "note": "No state changes found in the specified timeframe.",
         }
     states.sort(key=lambda x: x.get("last_changed", ""))
-    return {
+    total = len(states)
+    first_changed = states[0].get("last_changed")
+    last_changed = states[-1].get("last_changed")
+    states = _trim_attributes(_downsample(states, limit), attributes)
+    result: Dict[str, Any] = {
         "entity_id": entity_id,
         "states": states,
         "count": len(states),
-        "first_changed": states[0].get("last_changed"),
-        "last_changed": states[-1].get("last_changed"),
+        "first_changed": first_changed,
+        "last_changed": last_changed,
     }
+    if len(states) < total:
+        result["total_count"] = total
+        result["downsampled"] = True
+    return result
 
 
 @mcp.tool()
@@ -1620,6 +1647,8 @@ async def get_history_range(
     entity_id: str,
     start_time: str,
     end_time: Optional[str] = None,
+    limit: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Get raw state-change history for an entity over a date/time range.
@@ -1633,6 +1662,12 @@ async def get_history_range(
         start_time: ISO-8601 start (e.g. `2026-05-15` or
                     `2026-05-15T08:00:00Z`). Treated as UTC if no offset.
         end_time: ISO-8601 end. Defaults to now (UTC).
+        limit: Max states to return. If the window holds more, they are
+               sampled evenly across it (the last state is always kept) and
+               `total_count`/`downsampled` are set. Defaults to unlimited.
+        attributes: Attribute keys to keep on each state. `[]` drops
+                    attributes entirely, which is usually the bulk of the
+                    payload. Defaults to keeping all of them.
 
     Returns:
         Same shape as `get_history`: `entity_id`, `states`, `count`,
@@ -1641,6 +1676,8 @@ async def get_history_range(
     Examples:
         get_history_range("light.kitchen", "2026-05-15")
         get_history_range("sensor.power", "2026-05-15T00:00:00Z", "2026-05-16T00:00:00Z")
+        get_history_range("climate.hallway", "2026-05-15", limit=100,
+                          attributes=["hvac_action"])
 
     Best Practices:
         - Bound the window — wider ranges return more data and more tokens.
@@ -1653,7 +1690,24 @@ async def get_history_range(
         history_data = await get_entity_history_range(entity_id, start_time, end_time)
     except ValueError as e:
         return {"entity_id": entity_id, "error": str(e), "states": [], "count": 0}
-    return _flatten_history(history_data, entity_id)
+    return _flatten_history(history_data, entity_id, limit=limit, attributes=attributes)
+
+
+
+def _limit_statistics(result: Any, limit: Optional[int]) -> Any:
+    """Apply `limit` to a statistics result, preserving the response shape."""
+    if limit is None or not isinstance(result, dict):
+        return result
+    points = result.get("statistics")
+    if not isinstance(points, list) or len(points) <= limit:
+        return result
+    sampled = _downsample(points, limit)
+    return {
+        **result,
+        "statistics": sampled,
+        "total_count": len(points),
+        "downsampled": True,
+    }
 
 
 @mcp.tool()
@@ -1662,6 +1716,7 @@ async def get_statistics(
     entity_id: str,
     hours: int = 24,
     period: str = "hour",
+    limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Get long-term aggregated statistics for an entity over the last N hours.
@@ -1680,6 +1735,9 @@ async def get_statistics(
         hours: How far back from now. Defaults to 24.
         period: Bucket size — `5minute`, `hour`, `day`, `week`, `month`.
                 Defaults to `hour`.
+        limit: Max data points to return. If the window holds more, they are
+               sampled evenly across it (the last point is always kept) and
+               `total_count`/`downsampled` are set. Defaults to unlimited.
 
     Returns:
         `entity_id`, `period`, `start_time`, `end_time`, `statistics`
@@ -1693,7 +1751,9 @@ async def get_statistics(
         f"Getting statistics for {entity_id}: last {hours}h, period={period}"
     )
     try:
-        return await get_entity_statistics(entity_id, hours=hours, period=period)
+        return _limit_statistics(
+            await get_entity_statistics(entity_id, hours=hours, period=period), limit
+        )
     except ValueError as e:
         return {"entity_id": entity_id, "error": str(e), "statistics": []}
 
@@ -1705,6 +1765,7 @@ async def get_statistics_range(
     start_time: str,
     end_time: Optional[str] = None,
     period: str = "hour",
+    limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Get long-term aggregated statistics for an entity over a date/time range.
@@ -1720,6 +1781,9 @@ async def get_statistics_range(
                     `2026-01-01T00:00:00Z`). UTC if no offset.
         end_time: ISO-8601 end. Defaults to now.
         period: `5minute`, `hour`, `day`, `week`, or `month`.
+        limit: Max data points to return. If the window holds more, they are
+               sampled evenly across it (the last point is always kept) and
+               `total_count`/`downsampled` are set. Defaults to unlimited.
 
     Returns:
         `entity_id`, `period`, `start_time`, `end_time`, `statistics`.
@@ -1733,8 +1797,11 @@ async def get_statistics_range(
         f"{start_time} -> {end_time or 'now'}, period={period}"
     )
     try:
-        return await get_entity_statistics_range(
-            entity_id, start_time, end_time, period=period
+        return _limit_statistics(
+            await get_entity_statistics_range(
+                entity_id, start_time, end_time, period=period
+            ),
+            limit,
         )
     except ValueError as e:
         return {"entity_id": entity_id, "error": str(e), "statistics": []}
