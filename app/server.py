@@ -20,6 +20,7 @@ from app.hass import (
     cleanup_client, filter_fields, summarize_domain, get_system_overview,
     get_hass_error_log, get_entity_history, get_entity_history_range,
     get_entity_statistics, get_entity_statistics_range,
+    render_template as render_template_api,
 )
 from app import lovelace
 
@@ -1500,6 +1501,47 @@ You'll help the user create optimized dashboards by:
     ]
 
 # Documentation endpoint
+
+@mcp.tool()
+@async_handler("render_template")
+async def render_template(
+    template: str, variables: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Render a Jinja2 template using Home Assistant's own template engine.
+
+    Evaluates the template server-side with the live state machine, so it sees
+    real entity states and all of HA's template extensions (`states`,
+    `state_attr`, `is_state`, `expand`, `area_id`, `now()`, ...).
+
+    Use this to check a template BEFORE putting it in an automation, script or
+    template sensor. A template that raises at runtime usually fails silently
+    inside HA — the automation just doesn't fire — so verifying here first is
+    much faster than deploying and waiting to see whether it worked.
+
+    Args:
+        template: The Jinja2 template to render.
+        variables: Optional variables exposed to the template.
+
+    Returns:
+        The rendered output as a string. Invalid templates return the Jinja
+        error message from Home Assistant rather than raising.
+
+    Examples:
+        render_template("{{ states('sensor.outside_temperature') }}")
+        render_template("{{ states.light | selectattr('state','eq','on') | list | count }}")
+        render_template("{{ state_attr('climate.hallway','hvac_action') }}")
+        render_template("{{ x * 2 }}", variables={"x": 21})
+
+    Best Practices:
+        - Iterate on non-trivial Jinja here first, then paste it into config.
+        - Keep output small; a template that dumps every entity is as
+          expensive as any other large response.
+    """
+    logger.info(f"Rendering template ({len(template)} chars)")
+    return await render_template_api(template, variables)
+
+
 @mcp.tool()
 @async_handler("get_history")
 async def get_history(entity_id: str, hours: int = 24) -> Dict[str, Any]:
