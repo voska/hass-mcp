@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-24
+
+### Security
+- Update certifi and the Docker image's CA certificates for GHSA-6q48-6c7w-9gw2.
+- PyPI installations use the OS trust store; update your OS CA certificates.
+
+### Fixed
+- Error-log requests now use the shared TLS context, including OS-native
+  in-house CAs and `SSL_CERT_FILE` overrides.
+
 ## [0.6.0] - 2026-08-06
 
 ### Added
@@ -150,7 +160,8 @@ functional changes.
 
 Initial PyPI release.
 
-[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/voska/hass-mcp/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/voska/hass-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/voska/hass-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/voska/hass-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/voska/hass-mcp/compare/v0.4.0...v0.4.1

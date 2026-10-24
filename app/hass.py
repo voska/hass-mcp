@@ -579,7 +579,7 @@ async def get_hass_error_log(
     try:
         headers = get_ha_headers()
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=_build_ssl_context()) as client:
             # HA OS / Supervised — the most common deployment — exposes Core
             # logs at /api/hassio/core/logs. /api/error_log returns 404 there.
             hassio_url = f"{HA_URL}/api/hassio/core/logs"
