@@ -366,6 +366,35 @@ async def test_get_error_log_uses_hassio_endpoint_on_ha_os():
 
 
 @respx.mock
+async def test_get_error_log_uses_shared_tls_context(monkeypatch):
+    import json
+    import ssl
+    from unittest.mock import patch
+
+    context = ssl.create_default_context()
+    monkeypatch.setattr("app.hass._build_ssl_context", lambda: context)
+    hassio = respx.get("http://localhost:8123/api/hassio/core/logs").respond(404)
+    standalone = respx.get("http://localhost:8123/api/error_log").respond(
+        200, text="ERROR [mqtt] connection lost\n"
+    )
+
+    with patch("app.hass.httpx.AsyncClient", wraps=httpx.AsyncClient) as constructor:
+        async with create_connected_server_and_client_session(
+            mcp._mcp_server, raise_exceptions=True
+        ) as client:
+            result = await client.call_tool("get_error_log", arguments={})
+
+    assert not result.isError
+    assert json.loads(result.content[0].text)["error_count"] == 1
+    assert constructor.call_args.kwargs.get("verify") is context
+    assert hassio.called and standalone.called
+    for route in (hassio, standalone):
+        assert route.calls.last.request.extensions["timeout"] == {
+            "connect": 30, "read": 30, "write": 30, "pool": 30,
+        }
+
+
+@respx.mock
 async def test_get_error_log_falls_back_to_standalone_endpoint():
     """When /api/hassio/core/logs is unavailable (standalone Home Assistant
     install), get_error_log must fall back to /api/error_log."""
