@@ -227,6 +227,7 @@ async def get_entity_state(
     Returns:
         Entity state dictionary, optionally filtered to include only specified fields
     """
+    entity_id = entity_id.lower()
     if not _VALID_ENTITY_ID.fullmatch(entity_id):
         return {"error": "Invalid Home Assistant entity ID"}
 
