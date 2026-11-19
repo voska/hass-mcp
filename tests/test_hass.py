@@ -45,17 +45,18 @@ class TestHassAPI:
                             assert called_url == f"{mock_config['hass_url']}/api/states"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("entity_id", [
-        "light.living_room",
-        "binary_sensor.front_door",
-        "sensor.0x00158d0001a2b3c4_temperature",
-        "media_player.living_room_tv",
-        "input_boolean.guest_mode",
+    @pytest.mark.parametrize(("entity_id", "canonical_id"), [
+        ("light.living_room", "light.living_room"),
+        ("Light.Living_Room", "light.living_room"),
+        ("binary_sensor.front_door", "binary_sensor.front_door"),
+        ("sensor.0x00158d0001a2b3c4_temperature", "sensor.0x00158d0001a2b3c4_temperature"),
+        ("media_player.living_room_tv", "media_player.living_room_tv"),
+        ("input_boolean.guest_mode", "input_boolean.guest_mode"),
     ])
-    async def test_get_entity_state(self, mock_config, entity_id):
+    async def test_get_entity_state(self, mock_config, entity_id, canonical_id):
         """Test getting a specific entity state."""
         # Mock response data
-        mock_state = {"entity_id": entity_id, "state": "on"}
+        mock_state = {"entity_id": canonical_id, "state": "on"}
         
         # Create mock response
         mock_response = MagicMock()
@@ -75,16 +76,16 @@ class TestHassAPI:
                     
                     # Assertions
                     assert isinstance(state, dict)
-                    assert state["entity_id"] == entity_id
+                    assert state["entity_id"] == canonical_id
                     assert state["state"] == "on"
                     
                     # Verify API was called correctly
                     mock_client.get.assert_called_once()
                     called_url = mock_client.get.call_args[0][0]
-                    assert called_url == f"{mock_config['hass_url']}/api/states/{entity_id}"
+                    assert called_url == f"{mock_config['hass_url']}/api/states/{canonical_id}"
 
     @pytest.mark.parametrize("entity_id", [
-        "", "sensor", "sensor.room.extra", "sensor.room/extra", "sensor.room%20name",
+        "", "..", "%2e%2e", "sensor", "sensor.room.extra", "sensor.room/extra", "sensor.room%20name",
         "sensor.room?flag", "sensor.room#label", "sensor.room name", "sensor.room\n",
         "_sensor.room", "sensor_.room", "binary__sensor.room",
         "sensor._room", "sensor.room_", "sensor.room__name",
@@ -132,7 +133,7 @@ class TestHassAPI:
 
     @pytest.mark.parametrize("field", ["domain", "service"])
     @pytest.mark.parametrize("segment", [
-        "", "room.extra", "room/extra", "room%20name", "room?flag", "room#label",
+        "", "..", "%2e%2e", "room.extra", "room/extra", "room%20name", "room?flag", "room#label",
         "room name", "room\n", "_room", "room_", "room__name",
     ])
     async def test_call_service_rejects_invalid_identifier(self, field, segment):
