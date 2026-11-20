@@ -206,7 +206,7 @@ async def test_call_service_tool_reports_http_failure():
         error = "HTTP error: 400 - Bad Request"
         assert payload["success"] is False
         assert payload["error"] == error
-        assert payload["affected_entities"] == [{"error": error}]
+        assert payload["affected_entities"] == {"error": error}
 
 
 @pytest.mark.parametrize("suffix", ["", "/detailed"], ids=["standard", "detailed"])

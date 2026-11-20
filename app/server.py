@@ -156,8 +156,7 @@ async def get_entity_resource(entity_id: str) -> str:
     """
     logger.info(f"Getting entity resource: {entity_id}")
     
-    # Get the entity state with caching (using lean format for token efficiency)
-    state = await get_entity_state(entity_id, use_cache=True, lean=True)
+    state = await get_entity_state(entity_id, lean=True)
     
     # Check if there was an error
     if "error" in state:
@@ -738,7 +737,7 @@ async def get_entity_resource_detailed(entity_id: str) -> str:
     logger.info(f"Getting detailed entity resource: {entity_id}")
     
     # Get all fields, no filtering (detailed view explicitly requests all data)
-    state = await get_entity_state(entity_id, use_cache=True, lean=False)
+    state = await get_entity_state(entity_id, lean=False)
     
     # Check if there was an error
     if "error" in state:
@@ -954,7 +953,8 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
     
     Returns:
         A dictionary with success status, the domain/service called, and the
-        list of affected entity states returned by Home Assistant.
+        list of affected entity states returned by Home Assistant. Failed calls
+        also include an error message.
 
     Examples:
         domain='light', service='turn_on', data={'entity_id': 'light.x', 'brightness': 255}
@@ -964,12 +964,25 @@ async def call_service_tool(domain: str, service: str, data: Optional[Dict[str, 
     """
     logger.info(f"Calling Home Assistant service: {domain}.{service} with data: {data}")
     affected_entities = await call_service(domain, service, data or {})
-    return {
-        "success": True,
+    error = None
+    if isinstance(affected_entities, dict) and "error" in affected_entities:
+        error = affected_entities["error"]
+    elif (
+        isinstance(affected_entities, list)
+        and len(affected_entities) == 1
+        and isinstance(affected_entities[0], dict)
+        and "error" in affected_entities[0]
+    ):
+        error = affected_entities[0]["error"]
+    result = {
+        "success": error is None,
         "domain": domain,
         "service": service,
         "affected_entities": affected_entities,
     }
+    if error is not None:
+        result["error"] = error
+    return result
 
 # ---------------------------------------------------------------------------
 # Dashboard (Lovelace) editing
