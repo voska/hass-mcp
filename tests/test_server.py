@@ -28,7 +28,10 @@ class TestMCPServer:
             result = await call_service_tool(domain, service)
 
         get_client.assert_not_called()
-        assert result["affected_entities"] == [{"error": f"Invalid Home Assistant {field}"}]
+        error = f"Invalid Home Assistant {field}"
+        assert result["success"] is False
+        assert result["error"] == error
+        assert result["affected_entities"] == [{"error": error}]
 
     @pytest.mark.parametrize("entity_id", ["sensor.room\n", "../test_fixture"])
     async def test_get_entity_rejects_invalid_identifier(self, entity_id):

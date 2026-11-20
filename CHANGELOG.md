@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Restore standard and detailed entity resources and report service call failures
+  with `success: false` and the error message.
+
 ## [0.6.2] - 2026-11-20
 
 ### Fixed
