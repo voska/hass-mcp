@@ -15,6 +15,40 @@ if app_dir not in sys.path:
 
 class TestMCPServer:
     """Test the MCP server functionality."""
+
+    @pytest.mark.parametrize(("domain", "service", "field"), [
+        ("_light", "turn_on", "domain"),
+        ("..", "test_fixture", "domain"),
+        ("light", "turn/on", "service"),
+    ])
+    async def test_call_service_tool_rejects_invalid_identifiers(self, domain, service, field):
+        from app.server import call_service_tool
+
+        with patch("app.hass.get_client", side_effect=AssertionError("Unexpected HA request")) as get_client:
+            result = await call_service_tool(domain, service)
+
+        get_client.assert_not_called()
+        assert result["affected_entities"] == [{"error": f"Invalid Home Assistant {field}"}]
+
+    @pytest.mark.parametrize("entity_id", ["sensor.room\n", "../test_fixture"])
+    async def test_get_entity_rejects_invalid_identifier(self, entity_id):
+        from app.server import get_entity
+
+        with patch("app.hass.get_client", side_effect=AssertionError("Unexpected HA request")) as get_client:
+            result = await get_entity(entity_id)
+
+        get_client.assert_not_called()
+        assert result == {"error": "Invalid Home Assistant entity ID"}
+
+    @pytest.mark.parametrize("entity_id", ["binary__sensor.room", "../test_fixture"])
+    async def test_entity_action_rejects_invalid_derived_domain(self, entity_id):
+        from app.server import entity_action
+
+        with patch("app.hass.get_client", side_effect=AssertionError("Unexpected HA request")) as get_client:
+            result = await entity_action(entity_id, "on")
+
+        get_client.assert_not_called()
+        assert result == [{"error": "Invalid Home Assistant domain"}]
     
     def test_server_version(self):
         """Test that the server has a version attribute."""

@@ -45,10 +45,18 @@ class TestHassAPI:
                             assert called_url == f"{mock_config['hass_url']}/api/states"
 
     @pytest.mark.asyncio
-    async def test_get_entity_state(self, mock_config):
+    @pytest.mark.parametrize(("entity_id", "canonical_id"), [
+        ("light.living_room", "light.living_room"),
+        ("Light.Living_Room", "light.living_room"),
+        ("binary_sensor.front_door", "binary_sensor.front_door"),
+        ("sensor.0x00158d0001a2b3c4_temperature", "sensor.0x00158d0001a2b3c4_temperature"),
+        ("media_player.living_room_tv", "media_player.living_room_tv"),
+        ("input_boolean.guest_mode", "input_boolean.guest_mode"),
+    ])
+    async def test_get_entity_state(self, mock_config, entity_id, canonical_id):
         """Test getting a specific entity state."""
         # Mock response data
-        mock_state = {"entity_id": "light.living_room", "state": "on"}
+        mock_state = {"entity_id": canonical_id, "state": "on"}
         
         # Create mock response
         mock_response = MagicMock()
@@ -64,17 +72,30 @@ class TestHassAPI:
             with patch('app.hass.HA_URL', mock_config["hass_url"]):
                 with patch('app.hass.HA_TOKEN', mock_config["hass_token"]):
                     # Test function - use_cache parameter has been removed
-                    state = await get_entity_state("light.living_room")
+                    state = await get_entity_state(entity_id)
                     
                     # Assertions
                     assert isinstance(state, dict)
-                    assert state["entity_id"] == "light.living_room"
+                    assert state["entity_id"] == canonical_id
                     assert state["state"] == "on"
                     
                     # Verify API was called correctly
                     mock_client.get.assert_called_once()
                     called_url = mock_client.get.call_args[0][0]
-                    assert called_url == f"{mock_config['hass_url']}/api/states/light.living_room"
+                    assert called_url == f"{mock_config['hass_url']}/api/states/{canonical_id}"
+
+    @pytest.mark.parametrize("entity_id", [
+        "", "..", "%2e%2e", "sensor", "sensor.room.extra", "sensor.room/extra", "sensor.room%20name",
+        "sensor.room?flag", "sensor.room#label", "sensor.room name", "sensor.room\n",
+        "_sensor.room", "sensor_.room", "binary__sensor.room",
+        "sensor._room", "sensor.room_", "sensor.room__name",
+    ])
+    async def test_get_entity_state_rejects_invalid_identifier(self, entity_id):
+        with patch("app.hass.get_client", side_effect=AssertionError("Unexpected HA request")) as get_client:
+            result = await get_entity_state(entity_id)
+
+        get_client.assert_not_called()
+        assert result == {"error": "Invalid Home Assistant entity ID"}
 
     @pytest.mark.asyncio
     async def test_call_service(self, mock_config):
@@ -109,6 +130,37 @@ class TestHassAPI:
                         called_data = mock_client.post.call_args[1].get('json')
                         assert called_url == f"{mock_config['hass_url']}/api/services/{domain}/{service}"
                         assert called_data == data
+
+    @pytest.mark.parametrize("field", ["domain", "service"])
+    @pytest.mark.parametrize("segment", [
+        "", "..", "%2e%2e", "room.extra", "room/extra", "room%20name", "room?flag", "room#label",
+        "room name", "room\n", "_room", "room_", "room__name",
+    ])
+    async def test_call_service_rejects_invalid_identifier(self, field, segment):
+        arguments = {"domain": "light", "service": "turn_on"}
+        arguments[field] = segment
+        with patch("app.hass.get_client", side_effect=AssertionError("Unexpected HA request")) as get_client:
+            result = await call_service(**arguments)
+
+        get_client.assert_not_called()
+        assert result == [{"error": f"Invalid Home Assistant {field}"}]
+
+    @pytest.mark.parametrize(("domain", "service", "path"), [
+        ("light", "turn_on", "light/turn_on"),
+        ("light", "turn_off", "light/turn_off"),
+        ("light", "toggle", "light/toggle"),
+        ("automation", "reload", "automation/reload"),
+        ("homeassistant", "restart", "homeassistant/restart"),
+        ("fan", "set_percentage", "fan/set_percentage"),
+        ("input_number", "set_value", "input_number/set_value"),
+        ("INput_Number", "Set_Value", "input_number/set_value"),
+    ])
+    async def test_call_service_accepts_valid_identifiers(self, mock_get_client, mock_config, domain, service, path):
+        mock_get_client.post.return_value.json = MagicMock(return_value=[])
+
+        assert await call_service(domain, service) == []
+        mock_get_client.post.assert_awaited_once()
+        assert mock_get_client.post.call_args.args[0] == f"{mock_config['hass_url']}/api/services/{path}"
 
     @pytest.mark.asyncio
     async def test_get_automations(self, mock_config):

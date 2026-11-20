@@ -4,6 +4,7 @@ import functools
 import inspect
 import logging
 import os
+import re
 import ssl
 from datetime import datetime, timedelta, timezone
 
@@ -21,6 +22,12 @@ F = TypeVar('F', bound=Callable[..., Awaitable[Any]])
 
 # HTTP client
 _client: Optional[httpx.AsyncClient] = None
+
+# Match Home Assistant's domain and entity ID rules.
+_OBJECT_ID = r"(?!_)[\da-z_]+(?<!_)"
+_DOMAIN = r"(?!.+__)" + _OBJECT_ID
+_VALID_DOMAIN = re.compile(_DOMAIN)
+_VALID_ENTITY_ID = re.compile(_DOMAIN + r"\." + _OBJECT_ID)
 
 # Default field sets for different verbosity levels
 # Lean fields for standard requests (optimized for token efficiency)
@@ -220,7 +227,10 @@ async def get_entity_state(
     Returns:
         Entity state dictionary, optionally filtered to include only specified fields
     """
-    # Fetch directly
+    entity_id = entity_id.lower()
+    if not _VALID_ENTITY_ID.fullmatch(entity_id):
+        return {"error": "Invalid Home Assistant entity ID"}
+
     client = await get_client()
     response = await client.get(
         f"{HA_URL}/api/states/{entity_id}",
@@ -360,6 +370,15 @@ async def call_service(domain: str, service: str, data: Optional[Dict[str, Any]]
     Returns:
         List of affected entity states (may be empty for services like reload).
     """
+    domain = domain.lower()
+    if not _VALID_DOMAIN.fullmatch(domain):
+        return [{"error": "Invalid Home Assistant domain"}]
+
+    service = service.lower()
+    # Home Assistant validates the qualified service name as an entity ID.
+    if not _VALID_ENTITY_ID.fullmatch(f"{domain}.{service}"):
+        return [{"error": "Invalid Home Assistant service"}]
+
     if data is None:
         data = {}
     
