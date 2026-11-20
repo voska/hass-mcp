@@ -19,6 +19,7 @@ import pytest
 import respx
 import httpx
 from mcp.shared.memory import create_connected_server_and_client_session
+from pydantic import AnyUrl
 
 from app.server import mcp
 
@@ -181,9 +182,52 @@ async def test_call_service_tool_returns_dict_for_empty_list():
             f"This breaks MCP output validation on SDKs that enforce the return "
             f"type annotation. Got: {payload!r}"
         )
+        assert payload["success"] is True
+        assert payload["affected_entities"] == []
 
 
 # --- Roundtrip with respx (expected to pass on master) ----------------------
+
+@respx.mock
+async def test_call_service_tool_reports_http_failure():
+    import json
+
+    respx.post("http://localhost:8123/api/services/light/turn_on").mock(
+        return_value=httpx.Response(400)
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "call_service_tool", arguments={"domain": "light", "service": "turn_on"}
+        )
+        assert not result.isError
+        payload = json.loads(result.content[0].text)
+        error = "HTTP error: 400 - Bad Request"
+        assert payload["success"] is False
+        assert payload["error"] == error
+        assert payload["affected_entities"] == [{"error": error}]
+
+
+@pytest.mark.parametrize("suffix", ["", "/detailed"], ids=["standard", "detailed"])
+@respx.mock
+async def test_read_entity_resource_renders_state(suffix):
+    respx.get("http://localhost:8123/api/states/light.kitchen").mock(
+        return_value=httpx.Response(
+            200, json={"entity_id": "light.kitchen", "state": "on", "attributes": {}}
+        )
+    )
+    respx.post("http://localhost:8123/api/template").mock(
+        return_value=httpx.Response(200, text="light.kitchen\x1fKitchen")
+    )
+    async with create_connected_server_and_client_session(
+        mcp._mcp_server, raise_exceptions=True
+    ) as client:
+        result = await client.read_resource(AnyUrl(f"hass://entities/light.kitchen{suffix}"))
+        text = result.contents[0].text
+        assert "**State**: on\n" in text
+        assert "Error retrieving entity" not in text
+
 
 @respx.mock
 async def test_get_entity_via_protocol():
